@@ -1,8 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useEffect, useState } from 'react';
-import { Alert, FlatList, Keyboard, Modal, StyleSheet, Text, TextInput, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
+import { Alert, FlatList, Keyboard, KeyboardAvoidingView, Modal, Platform, StyleSheet, Text, TextInput, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
 import { Calendar } from 'react-native-calendars';
+// Add these to your imports at the top
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from 'firebase/auth';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { auth, db } from '../../firebaseConfig'; // <-- adjust path if necessary
 
 // --- DICTIONARY ---
 const TRANSLATIONS = {
@@ -24,7 +28,7 @@ const getLocalToday = () => { const d = new Date(); return `${d.getFullYear()}-$
 
 export default function App() {
   // 🔐 NEW: AUTHENTICATION STATES
-  const [appMode, setAppMode] = useState<'gatekeeper' | 'login_form' | 'offline_app' | 'cloud_app'>('gatekeeper');
+  const [appMode, setAppMode] = useState<'gatekeeper' | 'login_form' | 'register_form' | 'offline_app' | 'cloud_app'>('gatekeeper');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
@@ -52,34 +56,104 @@ export default function App() {
 
   useEffect(() => { loadData(); }, []);
 
-  const loadData = async () => {
+  const loadData = async (targetMode?: string) => {
     try {
-      const savedWorkouts = await AsyncStorage.getItem('@gym_workouts');
-      if (savedWorkouts !== null) setWorkouts(JSON.parse(savedWorkouts));
+      const user = auth.currentUser;
+      const modeToUse = targetMode || appMode; // <-- Use the passed mode if available
+      
+      if (user && modeToUse === 'cloud_app') {
+        // ☁️ Load from Firebase Firestore
+        const docRef = doc(db, 'users', user.uid);
+        const docSnap = await getDoc(docRef);
+        
+        if (docSnap.exists() && docSnap.data().workouts) {
+          setWorkouts(docSnap.data().workouts);
+        } else {
+          // 🔥 NEW: If they have no cloud data, ensure the screen is empty!
+          setWorkouts([]);
+        }
+      } else {
+        // 📱 Load from Local AsyncStorage
+        const savedWorkouts = await AsyncStorage.getItem('@gym_workouts');
+        if (savedWorkouts !== null) setWorkouts(JSON.parse(savedWorkouts));
+      }
+
+      // We still load settings/exercises locally regardless
       const savedExercises = await AsyncStorage.getItem('@custom_exercises');
       if (savedExercises !== null) setExerciseList(JSON.parse(savedExercises));
       const savedLang = await AsyncStorage.getItem('@app_language');
       if (savedLang === 'nl' || savedLang === 'en') setLang(savedLang);
-    } catch (error) {}
+    } catch (error) {
+      console.error("Error loading data:", error);
+    }
   };
 
   const saveWorkouts = async (updatedWorkoutsArray: Workout[]) => {
     try { 
-      await AsyncStorage.setItem('@gym_workouts', JSON.stringify(updatedWorkoutsArray)); 
-      // ☁️ CLOUD LOGIC GOES HERE LATER: If appMode === 'cloud_app', also push this array to Firebase!
-    } catch (error) {}
+      const user = auth.currentUser;
+      
+      if (user && appMode === 'cloud_app') {
+        // ☁️ ONLINE MODE: Save ONLY to Firebase Firestore
+        await setDoc(doc(db, 'users', user.uid), { workouts: updatedWorkoutsArray }, { merge: true });
+      } else {
+        // 📱 OFFLINE MODE: Save ONLY to Local AsyncStorage
+        await AsyncStorage.setItem('@gym_workouts', JSON.stringify(updatedWorkoutsArray)); 
+      }
+    } catch (error) {
+      console.error("Error saving data:", error);
+    }
   };
-
-  // --- 🔐 AUTHENTICATION LOGIC ---
-  const handleMockLogin = () => {
+  /// --- 🔐 REAL FIREBASE AUTHENTICATION LOGIC ---
+  const handleLogin = async () => {
     if (email === '' || password === '') {
       Alert.alert('Error', 'Please enter an email and password.');
       return;
     }
-    // ☁️ FIREBASE LOGIC GOES HERE LATER (e.g., firebase.auth().signInWithEmailAndPassword...)
-    // For now, we just pretend it worked and let them into the app!
-    Keyboard.dismiss();
-    setAppMode('cloud_app');
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+      Keyboard.dismiss();
+      setAppMode('cloud_app');
+      loadData('cloud_app'); // <-- Pass 'cloud_app' explicitly here
+    } catch (error: any) {
+      Alert.alert('Login Error', error.message);
+    }
+  };
+
+  const handleRegister = async () => {
+    if (email === '' || password === '') {
+      Alert.alert('Error', 'Please enter an email and password.');
+      return;
+    }
+    try {
+      await createUserWithEmailAndPassword(auth, email, password);
+      Keyboard.dismiss();
+      setAppMode('cloud_app');
+      
+      // 🔥 NEW: Give the new user a completely blank slate!
+      setWorkouts([]); 
+      saveWorkouts([]); 
+      
+    } catch (error: any) {
+      Alert.alert('Registration Error', error.message);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      setAppMode('gatekeeper');
+      setEmail('');     
+      setPassword(''); 
+      setWorkouts([]); // 🔥 NEW: Clear the workouts from the screen!
+      // loadData();   // <-- REMOVE OR COMMENT OUT this line so it doesn't immediately load offline data
+    } catch (error: any) {
+      Alert.alert('Logout Error', error.message);
+    }
+  };
+
+  const handleContinueOffline = () => {
+    setAppMode('offline_app');
+    loadData('offline_app'); // Explicitly tell it to load offline data
   };
 
   const toggleLanguage = async () => {
@@ -156,11 +230,16 @@ export default function App() {
 
         <View style={styles.authActionBox}>
           <TouchableOpacity style={styles.authPrimaryBtn} onPress={() => setAppMode('login_form')}>
-            <Ionicons name="cloud-outline" size={20} color="#FFF" style={{marginRight: 8}}/>
-            <Text style={styles.authPrimaryBtnText}>{t.login}</Text>
+            <Ionicons name="log-in-outline" size={20} color="#FFF" style={{marginRight: 8}}/>
+            <Text style={styles.authPrimaryBtnText}>Login</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={[styles.authPrimaryBtn, {backgroundColor: '#10B981', shadowColor: '#10B981'}]} onPress={() => setAppMode('register_form')}>
+            <Ionicons name="person-add-outline" size={20} color="#FFF" style={{marginRight: 8}}/>
+            <Text style={styles.authPrimaryBtnText}>Register</Text>
           </TouchableOpacity>
           
-          <TouchableOpacity style={styles.authSecondaryBtn} onPress={() => setAppMode('offline_app')}>
+          <TouchableOpacity style={styles.authSecondaryBtn} onPress={handleContinueOffline}>
             <Ionicons name="phone-portrait-outline" size={20} color="#64748B" style={{marginRight: 8}}/>
             <Text style={styles.authSecondaryBtnText}>{t.continueOffline}</Text>
           </TouchableOpacity>
@@ -181,16 +260,45 @@ export default function App() {
           </TouchableOpacity>
 
           <View style={styles.authLogoBox}>
-            <Text style={styles.authTitleText}>{t.login}</Text>
-            <Text style={{color: '#8D99AE', marginTop: 10, textAlign: 'center'}}>Sign in to sync your workouts across all your devices.</Text>
+            <Text style={styles.authTitleText}>Welcome Back</Text>
+            <Text style={{color: '#8D99AE', marginTop: 10, textAlign: 'center'}}>Sign in to sync your workouts.</Text>
           </View>
 
           <View style={styles.authFormBox}>
             <TextInput style={styles.authInput} placeholder={t.email} placeholderTextColor="#A0AABF" keyboardType="email-address" autoCapitalize="none" value={email} onChangeText={setEmail} />
             <TextInput style={styles.authInput} placeholder={t.password} placeholderTextColor="#A0AABF" secureTextEntry value={password} onChangeText={setPassword} />
             
-            <TouchableOpacity style={styles.authPrimaryBtn} onPress={handleMockLogin}>
+            <TouchableOpacity style={styles.authPrimaryBtn} onPress={handleLogin}>
               <Text style={styles.authPrimaryBtnText}>{t.submitLogin}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </TouchableWithoutFeedback>
+    );
+  }
+
+  // ==========================================
+  // 📝 RENDER: REGISTER FORM SCREEN
+  // ==========================================
+  if (appMode === 'register_form') {
+    return (
+      <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+        <View style={styles.authContainer}>
+          <TouchableOpacity style={styles.authBackBtn} onPress={() => setAppMode('gatekeeper')}>
+            <Ionicons name="arrow-back" size={24} color="#1E293B" />
+          </TouchableOpacity>
+
+          <View style={styles.authLogoBox}>
+            <Text style={styles.authTitleText}>Create Account</Text>
+            <Text style={{color: '#8D99AE', marginTop: 10, textAlign: 'center'}}>Join to save your gains to the cloud.</Text>
+          </View>
+
+          <View style={styles.authFormBox}>
+            <TextInput style={styles.authInput} placeholder={t.email} placeholderTextColor="#A0AABF" keyboardType="email-address" autoCapitalize="none" value={email} onChangeText={setEmail} />
+            <TextInput style={styles.authInput} placeholder={t.password} placeholderTextColor="#A0AABF" secureTextEntry value={password} onChangeText={setPassword} />
+            
+            <TouchableOpacity style={[styles.authPrimaryBtn, {backgroundColor: '#10B981', shadowColor: '#10B981'}]} onPress={handleRegister}>
+              <Text style={styles.authPrimaryBtnText}>Create Account</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -201,10 +309,13 @@ export default function App() {
   // ==========================================
   // 📱 RENDER: THE MAIN APP (Offline or Cloud)
   // ==========================================
-  return (
-    <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+  return (    
+    <KeyboardAvoidingView 
+      style={{ flex: 1 }} 
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
       <View style={styles.container}>
-        
+      
         <View style={styles.headerContainer}>
           <View>
             <Text style={styles.headerTitle}>{t.appTitle}</Text>
@@ -218,73 +329,91 @@ export default function App() {
           </View>
 
           <View style={{flexDirection: 'row', alignItems: 'center', gap: 15}}>
-            <TouchableOpacity onPress={toggleLanguage} style={styles.langButton}>
-              <Text style={styles.langButtonText}>{lang === 'en' ? '🇳🇱 NL' : '🇬🇧 EN'}</Text>
-            </TouchableOpacity>
-            <Ionicons name="barbell" size={32} color="#4361EE" />
-          </View>
+              <TouchableOpacity onPress={toggleLanguage} style={styles.langButton}>
+                <Text style={styles.langButtonText}>{lang === 'en' ? '🇳🇱 NL' : '🇬🇧 EN'}</Text>
+              </TouchableOpacity>
+
+              {/* Show Logout Button for cloud, and Back/Login Button for offline */}
+              {appMode === 'cloud_app' ? (
+                <TouchableOpacity onPress={handleLogout}>
+                  <Ionicons name="log-out-outline" size={32} color="#EF233C" />
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity onPress={() => {
+                  setAppMode('gatekeeper'); // Go back to the welcome screen
+                  setWorkouts([]); // Clear offline workouts from memory
+                }}>
+                  <Ionicons name="log-in-outline" size={32} color="#4361EE" />
+                </TouchableOpacity>
+              )}
+            </View>
         </View>
 
+
         {isFormVisible && (
-          <View style={styles.inputCard}>
-            <View style={styles.dateSelectorRow}>
-              <View style={{flex: 1}}>
-                <Text style={styles.inputLabel}>{t.date}</Text>
-                <TouchableOpacity style={styles.dateSelectorBtn} onPress={() => setIsDatePickerVisible(true)}>
-                  <Ionicons name="calendar-outline" size={18} color="#4361EE" style={{marginRight: 8}}/>
-                  <Text style={styles.dateSelectorText}>{workoutDate}</Text>
+          <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+            <View style={styles.inputCard}>
+              
+              <View style={styles.dateSelectorRow}>
+                <View style={{flex: 1}}>
+                  <Text style={styles.inputLabel}>{t.date}</Text>
+                  <TouchableOpacity style={styles.dateSelectorBtn} onPress={() => setIsDatePickerVisible(true)}>
+                    <Ionicons name="calendar-outline" size={18} color="#4361EE" style={{marginRight: 8}}/>
+                    <Text style={styles.dateSelectorText}>{workoutDate}</Text>
+                  </TouchableOpacity>
+                </View>
+                <View style={{flex: 1, marginLeft: 10}}>
+                  <Text style={styles.inputLabel}>{t.exercise}</Text>
+                  <TouchableOpacity style={styles.dropdownSelector} onPress={() => setIsDropdownVisible(true)}>
+                    <Text style={exercise ? styles.dropdownTextActive : styles.dropdownTextPlaceholder} numberOfLines={1}>
+                      {exercise ? exercise : t.selectPrompt}
+                    </Text>
+                    <Ionicons name="chevron-down" size={16} color="#8D99AE" />
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              <View style={styles.row}>
+                <View style={styles.halfInputContainer}>
+                  <Text style={styles.inputLabel}>{t.sets}</Text>
+                  <TextInput style={styles.input} placeholder="3" placeholderTextColor="#A0AABF" keyboardType="numeric" value={sets} onChangeText={setSets} />
+                </View>
+                <View style={styles.halfInputContainer}>
+                  <Text style={styles.inputLabel}>{t.reps}</Text>
+                  <TextInput style={styles.input} placeholder="10" placeholderTextColor="#A0AABF" keyboardType="numeric" value={reps} onChangeText={setReps} />
+                </View>
+              </View>
+              
+              <Text style={styles.inputLabel}>{t.trackBy}</Text>
+              <View style={styles.unitToggleContainer}>
+                <TouchableOpacity style={[styles.unitOption, measurementUnit === 'lbs/kg' && styles.unitOptionActive]} onPress={() => setMeasurementUnit('lbs/kg')}>
+                  <Ionicons name="barbell-outline" size={16} color={measurementUnit === 'lbs/kg' ? '#FFF' : '#64748B'} style={{marginRight: 6}} />
+                  <Text style={[styles.unitOptionText, measurementUnit === 'lbs/kg' && styles.unitOptionTextActive]}>{t.weightOption}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.unitOption, measurementUnit === 'sec' && styles.unitOptionActive]} onPress={() => setMeasurementUnit('sec')}>
+                  <Ionicons name="timer-outline" size={16} color={measurementUnit === 'sec' ? '#FFF' : '#64748B'} style={{marginRight: 6}} />
+                  <Text style={[styles.unitOptionText, measurementUnit === 'sec' && styles.unitOptionTextActive]}>{t.timeOption}</Text>
                 </TouchableOpacity>
               </View>
-              <View style={{flex: 1, marginLeft: 10}}>
-                <Text style={styles.inputLabel}>{t.exercise}</Text>
-                <TouchableOpacity style={styles.dropdownSelector} onPress={() => setIsDropdownVisible(true)}>
-                  <Text style={exercise ? styles.dropdownTextActive : styles.dropdownTextPlaceholder} numberOfLines={1}>
-                    {exercise ? exercise : t.selectPrompt}
-                  </Text>
-                  <Ionicons name="chevron-down" size={16} color="#8D99AE" />
+
+              <Text style={styles.inputLabel}>{measurementUnit === 'lbs/kg' ? t.weightInput : t.timeInput}</Text>
+              <View style={styles.measurementInputContainer}>
+                <TextInput style={styles.measurementInput} placeholder="0" placeholderTextColor="#A0AABF" keyboardType="numeric" value={measurementValue} onChangeText={setMeasurementValue} />
+                <Text style={styles.measurementUnitSuffix}>{measurementUnit === 'lbs/kg' ? 'lbs/kg' : 'sec'}</Text>
+              </View>
+
+              <View style={styles.formActionRow}>
+                <TouchableOpacity style={styles.cancelButton} onPress={resetFormState}>
+                  <Text style={styles.cancelButtonText}>{t.cancel}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
+                  <Ionicons name={editingId ? "checkmark-circle" : "add-circle"} size={20} color="#FFF" style={{marginRight: 6}} />
+                  <Text style={styles.saveButtonText}>{editingId ? t.update : t.save}</Text>
                 </TouchableOpacity>
               </View>
-            </View>
 
-            <View style={styles.row}>
-              <View style={styles.halfInputContainer}>
-                <Text style={styles.inputLabel}>{t.sets}</Text>
-                <TextInput style={styles.input} placeholder="3" placeholderTextColor="#A0AABF" keyboardType="numeric" value={sets} onChangeText={setSets} />
-              </View>
-              <View style={styles.halfInputContainer}>
-                <Text style={styles.inputLabel}>{t.reps}</Text>
-                <TextInput style={styles.input} placeholder="10" placeholderTextColor="#A0AABF" keyboardType="numeric" value={reps} onChangeText={setReps} />
-              </View>
             </View>
-            
-            <Text style={styles.inputLabel}>{t.trackBy}</Text>
-            <View style={styles.unitToggleContainer}>
-              <TouchableOpacity style={[styles.unitOption, measurementUnit === 'lbs/kg' && styles.unitOptionActive]} onPress={() => setMeasurementUnit('lbs/kg')}>
-                <Ionicons name="barbell-outline" size={16} color={measurementUnit === 'lbs/kg' ? '#FFF' : '#64748B'} style={{marginRight: 6}} />
-                <Text style={[styles.unitOptionText, measurementUnit === 'lbs/kg' && styles.unitOptionTextActive]}>{t.weightOption}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.unitOption, measurementUnit === 'sec' && styles.unitOptionActive]} onPress={() => setMeasurementUnit('sec')}>
-                <Ionicons name="timer-outline" size={16} color={measurementUnit === 'sec' ? '#FFF' : '#64748B'} style={{marginRight: 6}} />
-                <Text style={[styles.unitOptionText, measurementUnit === 'sec' && styles.unitOptionTextActive]}>{t.timeOption}</Text>
-              </TouchableOpacity>
-            </View>
-
-            <Text style={styles.inputLabel}>{measurementUnit === 'lbs/kg' ? t.weightInput : t.timeInput}</Text>
-            <View style={styles.measurementInputContainer}>
-              <TextInput style={styles.measurementInput} placeholder="0" placeholderTextColor="#A0AABF" keyboardType="numeric" value={measurementValue} onChangeText={setMeasurementValue} />
-              <Text style={styles.measurementUnitSuffix}>{measurementUnit === 'lbs/kg' ? 'lbs/kg' : 'sec'}</Text>
-            </View>
-
-            <View style={styles.formActionRow}>
-              <TouchableOpacity style={styles.cancelButton} onPress={resetFormState}>
-                <Text style={styles.cancelButtonText}>{t.cancel}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
-                <Ionicons name={editingId ? "checkmark-circle" : "add-circle"} size={20} color="#FFF" style={{marginRight: 6}} />
-                <Text style={styles.saveButtonText}>{editingId ? t.update : t.save}</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
+          </TouchableWithoutFeedback>
         )}
 
         <View style={styles.listContainer}>
@@ -315,11 +444,12 @@ export default function App() {
           )}
           
           <FlatList
-            data={displayedWorkouts} 
-            keyExtractor={(item) => item.id}
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
-            renderItem={({ item }) => (
+              data={displayedWorkouts} 
+              keyExtractor={(item) => item.id}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag" // <--- ADD THIS LINE
+              renderItem={({ item }) => (
               <View style={styles.workoutCard}>
                 <View style={styles.cardAccentBar} />
                 <View style={styles.workoutInfo}>
@@ -413,7 +543,7 @@ export default function App() {
         </Modal>
 
       </View>
-    </TouchableWithoutFeedback>
+    </KeyboardAvoidingView>
   );
 }
 
