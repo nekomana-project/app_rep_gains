@@ -47,7 +47,7 @@ Make sure you have [Node.js](https://nodejs.org/) installed, along with the Expo
 ### 1. Installation
 Clone the repository and install the dependencies:
 ```bash
-git clone [https://github.com/your-username/gains-tracker.git](https://github.com/your-username/gains-tracker.git)
+git clone [https://https://github.com/nekomana-project/app_rep_gains.git](https://https://github.com/nekomana-project/app_rep_gains.git)
 cd gains-tracker
 npm install
 ``` 
