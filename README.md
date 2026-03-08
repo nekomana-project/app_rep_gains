@@ -1,50 +1,61 @@
-# Welcome to your Expo app 👋
+# Gains Tracker (Gym Reps App) 🏋️‍♂️
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+A sleek, cross-platform mobile application built with **Expo** and **React Native** designed to help users log workouts, track progression, and calculate estimated calorie burn.
 
-## Get started
+## 🚀 Features
 
-1. Install dependencies
+* **Dual Language Support**: Seamlessly toggle between English and Dutch (Nederlands).
+* **Workout Logging**: Track exercises by sets, reps, and either weight (lbs/kg) or duration (seconds).
+* **Automatic Calorie Estimation**: Built-in logic to estimate calories burned based on workout intensity and volume.
+* **Exercise Management**: Choose from a default list or add/delete your own custom exercises.
+* **Calendar Overview**: Visual history of your workouts with a filtered view to see specific data for any given day.
+* **Authentication Flow**: Supports both an offline mode and a cloud-synced mode (Firebase ready).
+* **Local Persistence**: Uses `AsyncStorage` to ensure your data stays on your device even after closing the app.
 
-   ```bash
-   npm install
-   ```
+## 🛠 Tech Stack
 
-2. Start the app
+* **Framework**: [Expo](https://expo.dev/) (SDK 54)
+* **UI Library**: [React Native](https://reactnative.dev/) (v0.81.5)
+* **Navigation**: [Expo Router](https://docs.expo.dev/router/introduction/) (File-based routing)
+* **Icons**: `@expo/vector-icons` (Ionicons)
+* **Animations**: `react-native-reanimated`
+* **Storage**: `@react-native-async-storage/async-storage`
+* **Backend**: Firebase (Integration-ready)
 
-   ```bash
-   npx expo start
-   ```
+## 📦 Installation
 
-In the output, you'll find options to open the app in a
+1.  **Clone the repository**:
+    ```bash
+    git clone <your-repo-url>
+    cd gym-reps-app
+    ```
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+2.  **Install dependencies**:
+    ```bash
+    npm install
+    ```
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+3.  **Start the development server**:
+    ```bash
+    npx expo start
+    ```
 
-## Get a fresh project
+## 📱 Project Structure
 
-When you're ready, run:
+* `app/(tabs)/index.tsx`: The main dashboard containing the workout logger, history list, and authentication logic.
+* `app/(tabs)/explore.tsx`: A secondary screen showcasing app features and Expo documentation.
+* `app.json`: Configuration file for the Expo project, including app icons and splash screens.
+* `package.json`: Contains project dependencies and scripts.
 
-```bash
-npm run reset-project
-```
+## 🔧 Scripts
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+* `npm run start`: Starts the Expo development server.
+* `npm run android`: Opens the app in an Android Emulator.
+* `npm run ios`: Opens the app in an iOS Simulator.
+* `npm run web`: Opens the app in a web browser.
+* `npm run lint`: Runs ESLint to check for code quality issues.
+* `npm run reset-project`: Clears the starter code and moves it to `app-example`.
 
-## Learn more
+## 📄 License
 
-To learn more about developing your project with Expo, look at the following resources:
-
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+This project is private. See `package.json` for more details.
