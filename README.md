@@ -1,61 +1,82 @@
-# Gains Tracker (Gym Reps App) 🏋️‍♂️
+<div align="center">
+  <h1>💪 Gains Tracker</h1>
+  <p>A robust, hybrid offline & cloud-synced workout tracking application.</p>
 
-A sleek, cross-platform mobile application built with **Expo** and **React Native** designed to help users log workouts, track progression, and calculate estimated calorie burn.
+  ![React Native](https://img.shields.io/badge/React_Native-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)
+  ![Expo](https://img.shields.io/badge/Expo-1B1F23?style=for-the-badge&logo=expo&logoColor=white)
+  ![Firebase](https://img.shields.io/badge/Firebase-FFCA28?style=for-the-badge&logo=firebase&logoColor=black)
+  ![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript&logoColor=white)
+</div>
 
-## 🚀 Features
+<br />
 
-* **Dual Language Support**: Seamlessly toggle between English and Dutch (Nederlands).
-* **Workout Logging**: Track exercises by sets, reps, and either weight (lbs/kg) or duration (seconds).
-* **Automatic Calorie Estimation**: Built-in logic to estimate calories burned based on workout intensity and volume.
-* **Exercise Management**: Choose from a default list or add/delete your own custom exercises.
-* **Calendar Overview**: Visual history of your workouts with a filtered view to see specific data for any given day.
-* **Authentication Flow**: Supports both an offline mode and a cloud-synced mode (Firebase ready).
-* **Local Persistence**: Uses `AsyncStorage` to ensure your data stays on your device even after closing the app.
+## 📖 About The Project
 
+Gains Tracker is a hybrid mobile application built with React Native and Expo. It is designed to work seamlessly both **offline** (using local device storage) and **online** (with real-time cloud synchronization via Firebase).
+
+Whether you want to keep your data completely private on your phone or sync your gains across multiple devices with a registered account, Gains Tracker has you covered.
+
+## ✨ Features
+
+* **Hybrid Data Management:** * **Offline Mode:** Instantly track workouts using `AsyncStorage` without creating an account.
+  * **Cloud Mode:** Securely register an account to sync workouts and custom exercises to Firebase Firestore.
+* **Comprehensive Logging:** Track exercises by Sets, Reps, Weight (lbs/kg), or Time (duration in seconds).
+* **Smart Daily Stats:** Automatically calculates your total sets and estimated calories burned for the selected day.
+* **Custom Exercise Library:** Add or delete custom exercises. Cloud users get their own isolated, private exercise lists.
+* **Interactive Calendar:** View a calendar overview of your past workouts and filter your history by specific dates.
+* **Bilingual Support (i18n):** Fully translated into English and Dutch, with user preferences saved to their cloud profile.
+* **Secure Authentication:** Full Firebase Auth integration including Login, Registration, and Password Recovery.
+* **Data Privacy:** A dedicated "Danger Zone" in settings allows users to permanently and securely delete their account and all associated cloud data.
+
+## 📸 Screenshots
+
+*(Add screenshots of your app here!)*
 ## 🛠 Tech Stack
 
-* **Framework**: [Expo](https://expo.dev/) (SDK 54)
-* **UI Library**: [React Native](https://reactnative.dev/) (v0.81.5)
-* **Navigation**: [Expo Router](https://docs.expo.dev/router/introduction/) (File-based routing)
-* **Icons**: `@expo/vector-icons` (Ionicons)
-* **Animations**: `react-native-reanimated`
-* **Storage**: `@react-native-async-storage/async-storage`
-* **Backend**: Firebase (Integration-ready)
+* **Framework:** [React Native](https://reactnative.dev/) & [Expo](https://expo.dev/) (using Expo Router)
+* **Backend/Database:** [Firebase](https://firebase.google.com/) (Authentication & Firestore)
+* **Local Storage:** `@react-native-async-storage/async-storage`
+* **UI Components:** `react-native-calendars`, `@expo/vector-icons` (Ionicons)
 
-## 📦 Installation
+## 🚀 Getting Started
+To get a local copy up and running, follow these simple steps.
 
-1.  **Clone the repository**:
-    ```bash
-    git clone <your-repo-url>
-    cd gym-reps-app
-    ```
+### Prerequisites
+Make sure you have [Node.js](https://nodejs.org/) installed, along with the Expo CLI.
 
-2.  **Install dependencies**:
-    ```bash
-    npm install
-    ```
+### 1. Installation
+Clone the repository and install the dependencies:
+```bash
+git clone [https://github.com/your-username/gains-tracker.git](https://github.com/your-username/gains-tracker.git)
+cd gains-tracker
+npm install
+``` 
 
-3.  **Start the development server**:
-    ```bash
-    npx expo start
-    ```
+### 2. Firebase Configuration
+Because this app uses Firebase for cloud syncing, you need to provide your own Firebase configuration keys.
+Create a `.env` file in the root directory of the project and add your Firebase credentials using the `EXPO_PUBLIC_` prefix:
 
-## 📱 Project Structure
+```env
+EXPO_PUBLIC_FIREBASE_API_KEY=your_api_key_here
+EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN=your_project.firebaseapp.com
+EXPO_PUBLIC_FIREBASE_PROJECT_ID=your_project_id
+EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET=your_project.firebasestorage.app
+EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=your_sender_id
+EXPO_PUBLIC_FIREBASE_APP_ID=your_app_id
+```
 
-* `app/(tabs)/index.tsx`: The main dashboard containing the workout logger, history list, and authentication logic.
-* `app/(tabs)/explore.tsx`: A secondary screen showcasing app features and Expo documentation.
-* `app.json`: Configuration file for the Expo project, including app icons and splash screens.
-* `package.json`: Contains project dependencies and scripts.
+### 4. Running the App
+Start the Expo development server:
 
-## 🔧 Scripts
+```bash
+npx expo start
+```
+You can then open the app on your physical device using the Expo Go app, or run it on an iOS Simulator / Android Emulator.
 
-* `npm run start`: Starts the Expo development server.
-* `npm run android`: Opens the app in an Android Emulator.
-* `npm run ios`: Opens the app in an iOS Simulator.
-* `npm run web`: Opens the app in a web browser.
-* `npm run lint`: Runs ESLint to check for code quality issues.
-* `npm run reset-project`: Clears the starter code and moves it to `app-example`.
+## 📁 Project Structure
+* `app/(tabs)/index.tsx`: The main application hub (Auth screens, Main Dashboard, Modals, Firebase logic).
+* `firebaseConfig.ts`: Initializes the Firebase app using local environment variables.
+* `assets/`: Contains images, fonts, and icons.
 
-## 📄 License
-
-This project is private. See `package.json` for more details.
+## 📝 License
+Distributed under the MIT License. See `LICENSE` for more information.

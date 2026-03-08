@@ -1,24 +1,35 @@
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useEffect, useState } from 'react';
-import { Alert, FlatList, Keyboard, KeyboardAvoidingView, Modal, Platform, StyleSheet, Text, TextInput, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, Keyboard, KeyboardAvoidingView, Modal, Platform, StyleSheet, Text, TextInput, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
 import { Calendar } from 'react-native-calendars';
 // Add these to your imports at the top
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { createUserWithEmailAndPassword, deleteUser, sendPasswordResetEmail, signInWithEmailAndPassword, signOut } from 'firebase/auth';
+import { deleteDoc, doc, getDoc, setDoc } from 'firebase/firestore';
 import { auth, db } from '../../firebaseConfig'; // <-- adjust path if necessary
+
 
 // --- DICTIONARY ---
 const TRANSLATIONS = {
   en: {
     appTitle: "Gains Tracker", exercise: "EXERCISE", date: "DATE", selectPrompt: "Select an exercise...", sets: "SETS", reps: "REPS", trackBy: "TRACK BY", weightOption: "Weight (lbs/kg)", timeOption: "Time (sec)", weightInput: "WEIGHT", timeInput: "DURATION", cancel: "Cancel", save: "Save", update: "Update", history: "History", logWorkout: "Log Workout", chooseExercise: "Choose Exercise", typeNew: "Or type a new one...", deleteConfirmTitle: "Delete Workout", deleteConfirmMsg: "Are you sure you want to remove this?", deleteExerciseMsg: "Delete this exercise from your list?", calendarOverview: "Calendar Overview", close: "Close", filteredTo: "Filtered to:",
     // AUTH WORDS
-    welcome: "Welcome to", cloudSync: "Cloud Sync Enabled", login: "Login / Register", continueOffline: "Continue Offline", email: "Email", password: "Password", submitLogin: "Sign In", back: "Back"
+    welcome: "Welcome to", cloudSync: "Cloud Sync Enabled", login: "Login / Register", continueOffline: "Continue Offline", email: "Email", password: "Password", submitLogin: "Sign In", back: "Back",
+    forgotPassword: "Forgot Password?", resetSentTitle: "Email Sent", resetSentMsg: "Check your email for a password reset link.", resetPrompt: "Please enter your email address first.", errorTitle: "Error", defaultError: "An unexpected error occurred. Please try again.",
+    // STATS & SETTINGS
+    totalCalories: "CALORIES", totalSets: "TOTAL SETS", settings: "Settings", language: "Language", logout: "Log Out", exitOffline: "Exit Offline Mode", dangerZone: "DANGER ZONE", deleteAccountBtn: "Delete Account", deleteAccountConfirmTitle: "Delete Account", deleteAccountConfirmMsg: "This will permanently delete your account and all cloud data. Are you sure?",
+    // FIREBASE ERRORS
+    "auth/invalid-email": "The email address is badly formatted.", "auth/invalid-credential": "No user found or incorrect password.", "auth/user-not-found": "No user found with this email.", "auth/wrong-password": "Incorrect password.", "auth/email-already-in-use": "This email is already registered.", "auth/weak-password": "Password should be at least 6 characters.", "auth/requires-recent-login": "For security, please log out and log back in before deleting your account."
   },
   nl: {
     appTitle: "Trainings Tracker", exercise: "OEFENING", date: "DATUM", selectPrompt: "Kies een oefening...", sets: "SETS", reps: "HERHALINGEN", trackBy: "BIJHOUDEN IN", weightOption: "Gewicht (kg)", timeOption: "Tijd (sec)", weightInput: "GEWICHT", timeInput: "DUUR", cancel: "Annuleren", save: "Opslaan", update: "Aanpassen", history: "Geschiedenis", logWorkout: "Training Loggen", chooseExercise: "Kies Oefening", typeNew: "Of typ een nieuwe...", deleteConfirmTitle: "Verwijder Training", deleteConfirmMsg: "Weet je zeker dat je dit wilt verwijderen?", deleteExerciseMsg: "Verwijder deze oefening uit de lijst?", calendarOverview: "Kalender Overzicht", close: "Sluiten", filteredTo: "Gefilterd op:",
     // AUTH WORDS
-    welcome: "Welkom bij", cloudSync: "Cloud Sync Geactiveerd", login: "Inloggen / Registreren", continueOffline: "Offline Doorgaan", email: "E-mailadres", password: "Wachtwoord", submitLogin: "Inloggen", back: "Terug"
+    welcome: "Welkom bij", cloudSync: "Cloud Sync Geactiveerd", login: "Inloggen / Registreren", continueOffline: "Offline Doorgaan", email: "E-mailadres", password: "Wachtwoord", submitLogin: "Inloggen", back: "Terug",
+    forgotPassword: "Wachtwoord Vergeten?", resetSentTitle: "E-mail Verzonden", resetSentMsg: "Controleer je e-mail voor een reset link.", resetPrompt: "Vul eerst je e-mailadres in.", errorTitle: "Fout", defaultError: "Er is een onverwachte fout opgetreden. Probeer het opnieuw.",
+    // STATS & SETTINGS
+    totalCalories: "CALORIEËN", totalSets: "TOTAAL SETS", settings: "Instellingen", language: "Taal", logout: "Uitloggen", exitOffline: "Offline Modus Verlaten", dangerZone: "GEVARENZONE", deleteAccountBtn: "Account Verwijderen", deleteAccountConfirmTitle: "Account Verwijderen", deleteAccountConfirmMsg: "Dit verwijdert je account en alle cloud data permanent. Weet je het zeker?",
+    // FIREBASE ERRORS
+    "auth/invalid-email": "Het e-mailadres is ongeldig.", "auth/invalid-credential": "Geen gebruiker gevonden of onjuist wachtwoord.", "auth/user-not-found": "Geen gebruiker gevonden met dit e-mailadres.", "auth/wrong-password": "Onjuist wachtwoord.", "auth/email-already-in-use": "Dit e-mailadres is al geregistreerd.", "auth/weak-password": "Wachtwoord moet minimaal 6 tekens lang zijn.", "auth/requires-recent-login": "Log voor de veiligheid uit en opnieuw in voordat je je account verwijdert."
   }
 };
 
@@ -31,6 +42,8 @@ export default function App() {
   const [appMode, setAppMode] = useState<'gatekeeper' | 'login_form' | 'register_form' | 'offline_app' | 'cloud_app'>('gatekeeper');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false); // 🔥 NEW: Pull-to-refresh state
 
   const [lang, setLang] = useState<'en' | 'nl'>('en');
   const t = TRANSLATIONS[lang]; 
@@ -50,6 +63,7 @@ export default function App() {
   const [isDropdownVisible, setIsDropdownVisible] = useState(false);
   const [isDatePickerVisible, setIsDatePickerVisible] = useState(false); 
   const [isCalendarOverviewVisible, setIsCalendarOverviewVisible] = useState(false); 
+  const [isSettingsVisible, setIsSettingsVisible] = useState(false); // 🔥 NEW STATE
 
   const [exerciseList, setExerciseList] = useState<string[]>(DEFAULT_EXERCISES);
   const [newCustomExercise, setNewCustomExercise] = useState('');
@@ -59,28 +73,36 @@ export default function App() {
   const loadData = async (targetMode?: string) => {
     try {
       const user = auth.currentUser;
-      const modeToUse = targetMode || appMode; // <-- Use the passed mode if available
+      const modeToUse = targetMode || appMode;
       
       if (user && modeToUse === 'cloud_app') {
         // ☁️ Load from Firebase Firestore
         const docRef = doc(db, 'users', user.uid);
         const docSnap = await getDoc(docRef);
         
-        if (docSnap.exists() && docSnap.data().workouts) {
-          setWorkouts(docSnap.data().workouts);
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          setWorkouts(data.workouts || []);
+          setExerciseList(data.exercises || DEFAULT_EXERCISES); 
+          if (data.language && (data.language === 'en' || data.language === 'nl')) {
+            setLang(data.language); // 🔥 NEW: Load user's saved language
+          }
         } else {
-          // 🔥 NEW: If they have no cloud data, ensure the screen is empty!
           setWorkouts([]);
+          setExerciseList(DEFAULT_EXERCISES);
         }
       } else {
         // 📱 Load from Local AsyncStorage
         const savedWorkouts = await AsyncStorage.getItem('@gym_workouts');
         if (savedWorkouts !== null) setWorkouts(JSON.parse(savedWorkouts));
+        else setWorkouts([]);
+
+        // 🔥 NEW: Fetch local exercises ONLY for offline
+        const savedExercises = await AsyncStorage.getItem('@custom_exercises');
+        if (savedExercises !== null) setExerciseList(JSON.parse(savedExercises));
+        else setExerciseList(DEFAULT_EXERCISES);
       }
 
-      // We still load settings/exercises locally regardless
-      const savedExercises = await AsyncStorage.getItem('@custom_exercises');
-      if (savedExercises !== null) setExerciseList(JSON.parse(savedExercises));
       const savedLang = await AsyncStorage.getItem('@app_language');
       if (savedLang === 'nl' || savedLang === 'en') setLang(savedLang);
     } catch (error) {
@@ -103,19 +125,40 @@ export default function App() {
       console.error("Error saving data:", error);
     }
   };
+
+  const saveExercises = async (updatedList: string[]) => {
+    try {
+      const user = auth.currentUser;
+      if (user && appMode === 'cloud_app') {
+        // ☁️ ONLINE MODE: Save ONLY to Firebase Firestore
+        await setDoc(doc(db, 'users', user.uid), { exercises: updatedList }, { merge: true });
+      } else {
+        // 📱 OFFLINE MODE: Save ONLY to Local AsyncStorage
+        await AsyncStorage.setItem('@custom_exercises', JSON.stringify(updatedList));
+      }
+    } catch (error) {
+      console.error("Error saving exercises:", error);
+    }
+  };
+
+
   /// --- 🔐 REAL FIREBASE AUTHENTICATION LOGIC ---
   const handleLogin = async () => {
     if (email === '' || password === '') {
       Alert.alert('Error', 'Please enter an email and password.');
       return;
     }
+    setIsLoading(true); // Start loading spinner
     try {
       await signInWithEmailAndPassword(auth, email, password);
       Keyboard.dismiss();
       setAppMode('cloud_app');
-      loadData('cloud_app'); // <-- Pass 'cloud_app' explicitly here
+      loadData('cloud_app'); 
     } catch (error: any) {
-      Alert.alert('Login Error', error.message);
+      const errorMsg = t[error.code as keyof typeof t] || error.message;
+      Alert.alert(t.errorTitle, errorMsg);
+    } finally {
+      setIsLoading(false); // Stop loading spinner no matter what happens
     }
   };
 
@@ -124,17 +167,17 @@ export default function App() {
       Alert.alert('Error', 'Please enter an email and password.');
       return;
     }
+    setIsLoading(true); // Start loading spinner
     try {
       await createUserWithEmailAndPassword(auth, email, password);
       Keyboard.dismiss();
       setAppMode('cloud_app');
-      
-      // 🔥 NEW: Give the new user a completely blank slate!
       setWorkouts([]); 
       saveWorkouts([]); 
-      
     } catch (error: any) {
       Alert.alert('Registration Error', error.message);
+    } finally {
+      setIsLoading(false); // Stop loading spinner
     }
   };
 
@@ -145,10 +188,45 @@ export default function App() {
       setEmail('');     
       setPassword(''); 
       setWorkouts([]); // 🔥 NEW: Clear the workouts from the screen!
+      setExerciseList(DEFAULT_EXERCISES);
       // loadData();   // <-- REMOVE OR COMMENT OUT this line so it doesn't immediately load offline data
     } catch (error: any) {
       Alert.alert('Logout Error', error.message);
     }
+  };
+
+  const handleDeleteAccount = () => {
+    Alert.alert(t.deleteAccountConfirmTitle, t.deleteAccountConfirmMsg, [
+      { text: t.cancel, style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: async () => {
+          try {
+            const user = auth.currentUser;
+            if (user) {
+              setIsLoading(true);
+              // 1. Delete their data from Firestore first
+              await deleteDoc(doc(db, 'users', user.uid));
+              // 2. Delete the actual Auth account
+              await deleteUser(user);
+              // 3. Clear local state and boot them to the welcome screen
+              setAppMode('gatekeeper');
+              setWorkouts([]);
+              setExerciseList(DEFAULT_EXERCISES);
+            }
+          } catch (error: any) {
+            const errorMsg = t[error.code as keyof typeof t] || error.message;
+            Alert.alert(t.errorTitle, errorMsg);
+          } finally {
+            setIsLoading(false);
+          }
+        }
+      }
+    ]);
+  };
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    await loadData(); // Reloads Firebase or Local data based on appMode
+    setIsRefreshing(false);
   };
 
   const handleContinueOffline = () => {
@@ -156,11 +234,36 @@ export default function App() {
     loadData('offline_app'); // Explicitly tell it to load offline data
   };
 
+  const handleForgotPassword = async () => {
+    if (email === '') {
+      Alert.alert(t.errorTitle, t.resetPrompt);
+      return;
+    }
+    setIsLoading(true);
+    try {
+      await sendPasswordResetEmail(auth, email);
+      Alert.alert(t.resetSentTitle, t.resetSentMsg);
+    } catch (error: any) {
+      const errorMsg = t[error.code as keyof typeof t] || error.message;
+      Alert.alert(t.errorTitle, errorMsg);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const toggleLanguage = async () => {
     const newLang = lang === 'en' ? 'nl' : 'en';
     setLang(newLang);
-    await AsyncStorage.setItem('@app_language', newLang);
-  };
+    
+    const user = auth.currentUser;
+    if (user && appMode === 'cloud_app') {
+      // ☁️ Save language to Firebase
+      await setDoc(doc(db, 'users', user.uid), { language: newLang }, { merge: true });
+    } else {
+      // 📱 Save language locally
+      await AsyncStorage.setItem('@app_language', newLang);
+    }
+  };;
 
   const calculateCalories = (unit: string, s: string, r: string, v: string) => {
     const setsCount = s ? Number(s) : 1; const repsCount = r ? Number(r) : 1; const valueCount = Number(v) || 0;
@@ -172,9 +275,14 @@ export default function App() {
     const trimmedName = newCustomExercise.trim();
     if (trimmedName === '') return;
     if (exerciseList.includes(trimmedName)) return;
+    
     const updatedList = [trimmedName, ...exerciseList];
-    setExerciseList(updatedList); setNewCustomExercise(''); Keyboard.dismiss();
-    await AsyncStorage.setItem('@custom_exercises', JSON.stringify(updatedList));
+    setExerciseList(updatedList); 
+    setNewCustomExercise(''); 
+    Keyboard.dismiss();
+    
+    // 🔥 NEW: Use our smart save function
+    await saveExercises(updatedList);
   };
 
   const handleDeleteExerciseItem = (exerciseToRemove: string) => {
@@ -182,7 +290,10 @@ export default function App() {
       { text: t.cancel, style: 'cancel' },
       { text: 'Delete', style: 'destructive', onPress: async () => {
           const updatedList = exerciseList.filter((e) => e !== exerciseToRemove);
-          setExerciseList(updatedList); await AsyncStorage.setItem('@custom_exercises', JSON.stringify(updatedList));
+          setExerciseList(updatedList); 
+          
+          // 🔥 NEW: Use our smart save function
+          await saveExercises(updatedList);
         }
       }
     ]);
@@ -215,6 +326,10 @@ export default function App() {
   };
 
   const displayedWorkouts = filterDate ? workouts.filter((w) => w.date === filterDate) : workouts;
+  
+  // 🔥 NEW: Calculate Stats for the currently displayed workouts
+  const dailyCalories = displayedWorkouts.reduce((sum, w) => sum + (w.calories || 0), 0);
+  const dailySets = displayedWorkouts.reduce((sum, w) => sum + (Number(w.sets) || 0), 0);
 
   // ==========================================
   // 🚪 RENDER: GATEKEEPER / WELCOME SCREEN
@@ -248,7 +363,7 @@ export default function App() {
     );
   }
 
-  // ==========================================
+// ==========================================
   // 🔐 RENDER: LOGIN FORM SCREEN
   // ==========================================
   if (appMode === 'login_form') {
@@ -268,8 +383,24 @@ export default function App() {
             <TextInput style={styles.authInput} placeholder={t.email} placeholderTextColor="#A0AABF" keyboardType="email-address" autoCapitalize="none" value={email} onChangeText={setEmail} />
             <TextInput style={styles.authInput} placeholder={t.password} placeholderTextColor="#A0AABF" secureTextEntry value={password} onChangeText={setPassword} />
             
-            <TouchableOpacity style={styles.authPrimaryBtn} onPress={handleLogin}>
-              <Text style={styles.authPrimaryBtnText}>{t.submitLogin}</Text>
+            {/* 🔥 UPDATED LOGIN BUTTON 🔥 */}
+            <TouchableOpacity 
+              style={[styles.authPrimaryBtn, isLoading && { opacity: 0.7 }]} 
+              onPress={handleLogin}
+              disabled={isLoading}
+            >
+              {isLoading ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <Text style={styles.authPrimaryBtnText}>{t.submitLogin}</Text>
+              )}
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={{marginTop: 15, alignItems: 'center'}} 
+              onPress={handleForgotPassword}
+              disabled={isLoading}
+            >
+              <Text style={{color: '#4361EE', fontWeight: '600', fontSize: 14}}>{t.forgotPassword}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -277,7 +408,7 @@ export default function App() {
     );
   }
 
-  // ==========================================
+// ==========================================
   // 📝 RENDER: REGISTER FORM SCREEN
   // ==========================================
   if (appMode === 'register_form') {
@@ -297,15 +428,23 @@ export default function App() {
             <TextInput style={styles.authInput} placeholder={t.email} placeholderTextColor="#A0AABF" keyboardType="email-address" autoCapitalize="none" value={email} onChangeText={setEmail} />
             <TextInput style={styles.authInput} placeholder={t.password} placeholderTextColor="#A0AABF" secureTextEntry value={password} onChangeText={setPassword} />
             
-            <TouchableOpacity style={[styles.authPrimaryBtn, {backgroundColor: '#10B981', shadowColor: '#10B981'}]} onPress={handleRegister}>
-              <Text style={styles.authPrimaryBtnText}>Create Account</Text>
+            {/* 🔥 UPDATED REGISTER BUTTON 🔥 */}
+            <TouchableOpacity 
+              style={[styles.authPrimaryBtn, {backgroundColor: '#10B981', shadowColor: '#10B981'}, isLoading && { opacity: 0.7 }]} 
+              onPress={handleRegister}
+              disabled={isLoading}
+            >
+              {isLoading ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <Text style={styles.authPrimaryBtnText}>Create Account</Text>
+              )}
             </TouchableOpacity>
           </View>
         </View>
       </TouchableWithoutFeedback>
     );
   }
-
   // ==========================================
   // 📱 RENDER: THE MAIN APP (Offline or Cloud)
   // ==========================================
@@ -319,7 +458,6 @@ export default function App() {
         <View style={styles.headerContainer}>
           <View>
             <Text style={styles.headerTitle}>{t.appTitle}</Text>
-            {/* Show a cloud icon if they logged in! */}
             {appMode === 'cloud_app' && (
               <View style={{flexDirection: 'row', alignItems: 'center', marginTop: 4}}>
                 <Ionicons name="cloud-done" size={12} color="#10B981" />
@@ -328,27 +466,11 @@ export default function App() {
             )}
           </View>
 
-          <View style={{flexDirection: 'row', alignItems: 'center', gap: 15}}>
-              <TouchableOpacity onPress={toggleLanguage} style={styles.langButton}>
-                <Text style={styles.langButtonText}>{lang === 'en' ? '🇳🇱 NL' : '🇬🇧 EN'}</Text>
-              </TouchableOpacity>
-
-              {/* Show Logout Button for cloud, and Back/Login Button for offline */}
-              {appMode === 'cloud_app' ? (
-                <TouchableOpacity onPress={handleLogout}>
-                  <Ionicons name="log-out-outline" size={32} color="#EF233C" />
-                </TouchableOpacity>
-              ) : (
-                <TouchableOpacity onPress={() => {
-                  setAppMode('gatekeeper'); // Go back to the welcome screen
-                  setWorkouts([]); // Clear offline workouts from memory
-                }}>
-                  <Ionicons name="log-in-outline" size={32} color="#4361EE" />
-                </TouchableOpacity>
-              )}
-            </View>
+          {/* 🔥 SINGLE SETTINGS BUTTON 🔥 */}
+          <TouchableOpacity onPress={() => setIsSettingsVisible(true)} style={{padding: 4}}>
+            <Ionicons name="settings-outline" size={28} color="#1E293B" />
+          </TouchableOpacity>
         </View>
-
 
         {isFormVisible && (
           <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
@@ -442,13 +564,29 @@ export default function App() {
               </TouchableOpacity>
             </View>
           )}
+
+          {/* 🔥 NEW: Daily Stats Bar */}
+          {displayedWorkouts.length > 0 && (
+            <View style={styles.statsContainer}>
+              <View style={styles.statBox}>
+                <Text style={styles.statBoxLabel}>{t.totalSets}</Text>
+                <Text style={styles.statBoxValue}>{dailySets}</Text>
+              </View>
+              <View style={styles.statBox}>
+                <Text style={styles.statBoxLabel}>{t.totalCalories}</Text>
+                <Text style={styles.statBoxValue}>🔥 {dailyCalories}</Text>
+              </View>
+            </View>
+          )}
           
           <FlatList
               data={displayedWorkouts} 
               keyExtractor={(item) => item.id}
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
-              keyboardDismissMode="on-drag" // <--- ADD THIS LINE
+              keyboardDismissMode="on-drag" 
+              refreshing={isRefreshing}     
+              onRefresh={handleRefresh}     
               renderItem={({ item }) => (
               <View style={styles.workoutCard}>
                 <View style={styles.cardAccentBar} />
@@ -529,7 +667,7 @@ export default function App() {
           </View>
         </Modal>
 
-        <Modal visible={isCalendarOverviewVisible} transparent={true} animationType="slide">
+        <Modal visible={isCalendarOverviewVisible} transparent={true} animationType="fade">
           <View style={styles.modalBackground}>
             <View style={styles.modalContent}>
               <View style={styles.modalHeader}>
@@ -540,6 +678,74 @@ export default function App() {
               <TouchableOpacity style={styles.modalCloseButton} onPress={() => setIsCalendarOverviewVisible(false)}><Text style={styles.modalCloseText}>{t.close}</Text></TouchableOpacity>
             </View>
           </View>
+        </Modal>
+
+        {/* ========================================== */}
+        {/* ⚙️ SETTINGS MODAL */}
+        {/* ========================================== */}
+        <Modal visible={isSettingsVisible} transparent={true} animationType="fade">
+          {/* 🔥 NEW: Wrapper to detect taps on the dark background */}
+          <TouchableWithoutFeedback onPress={() => setIsSettingsVisible(false)}>
+            <View style={styles.modalBackground}>
+              
+              {/* 🔥 NEW: Wrapper to prevent taps INSIDE the menu from closing it */}
+              <TouchableWithoutFeedback>
+                <View style={styles.modalContent}>
+                  
+                  <View style={styles.modalHeader}>
+                    <Text style={styles.modalTitle}>{t.settings}</Text>
+                    <TouchableOpacity onPress={() => setIsSettingsVisible(false)}>
+                      <Ionicons name="close-circle" size={28} color="#8D99AE" />
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* Language Toggle (Available to everyone) */}
+                  <TouchableOpacity style={styles.settingsRow} onPress={toggleLanguage}>
+                    <View style={{flexDirection: 'row', alignItems: 'center'}}>
+                      <Ionicons name="language-outline" size={24} color="#4361EE" style={{marginRight: 12}} />
+                      <Text style={styles.settingsRowText}>{t.language}</Text>
+                    </View>
+                    <Text style={styles.settingsRowValue}>{lang === 'en' ? '🇬🇧 English' : '🇳🇱 Nederlands'}</Text>
+                  </TouchableOpacity>
+
+                  {/* App Mode Specific Buttons */}
+                  {appMode === 'cloud_app' ? (
+                    <>
+                      <TouchableOpacity style={styles.settingsRow} onPress={() => { setIsSettingsVisible(false); handleLogout(); }}>
+                        <View style={{flexDirection: 'row', alignItems: 'center'}}>
+                          <Ionicons name="log-out-outline" size={24} color="#64748B" style={{marginRight: 12}} />
+                          <Text style={styles.settingsRowText}>{t.logout}</Text>
+                        </View>
+                      </TouchableOpacity>
+
+                      {/* 🔥 DANGER ZONE 🔥 */}
+                      <View style={styles.dangerZone}>
+                        <Text style={styles.dangerZoneTitle}>{t.dangerZone}</Text>
+                        <TouchableOpacity style={styles.deleteAccountBtn} onPress={() => { setIsSettingsVisible(false); handleDeleteAccount(); }}>
+                          <Ionicons name="trash-outline" size={20} color="#FFF" style={{marginRight: 8}} />
+                          <Text style={styles.deleteAccountBtnText}>{t.deleteAccountBtn}</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </>
+                  ) : (
+                    <TouchableOpacity style={styles.settingsRow} onPress={() => { 
+                      setIsSettingsVisible(false); 
+                      setAppMode('gatekeeper'); 
+                      setWorkouts([]); 
+                      setExerciseList(DEFAULT_EXERCISES); 
+                    }}>
+                      <View style={{flexDirection: 'row', alignItems: 'center'}}>
+                        <Ionicons name="log-in-outline" size={24} color="#4361EE" style={{marginRight: 12}} />
+                        <Text style={styles.settingsRowText}>{t.exitOffline}</Text>
+                      </View>
+                    </TouchableOpacity>
+                  )}
+
+                </View>
+              </TouchableWithoutFeedback>
+
+            </View>
+          </TouchableWithoutFeedback>
         </Modal>
 
       </View>
@@ -635,5 +841,20 @@ const styles = StyleSheet.create({
   modalItemTextContainer: { flex: 1, paddingVertical: 18 },
   modalItemText: { fontSize: 17, color: '#1E293B', fontWeight: '600' },
   modalCloseButton: { marginTop: 20, padding: 15, backgroundColor: '#F1F5F9', borderRadius: 16, alignItems: 'center' },
-  modalCloseText: { color: '#1E293B', fontSize: 16, fontWeight: '700' }
+  modalCloseText: { color: '#1E293B', fontSize: 16, fontWeight: '700' },
+
+  // STATS STYLES
+  statsContainer: { flexDirection: 'row', gap: 10, marginBottom: 16 },
+  statBox: { flex: 1, backgroundColor: '#FFFFFF', padding: 16, borderRadius: 16, alignItems: 'center', shadowColor: '#1E293B', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.04, shadowRadius: 12, elevation: 2 },
+  statBoxLabel: { fontSize: 12, color: '#8D99AE', fontWeight: '700', textTransform: 'uppercase', marginBottom: 4, letterSpacing: 0.5 },
+  statBoxValue: { fontSize: 20, color: '#1E293B', fontWeight: '800' },
+
+  // SETTINGS STYLES
+  settingsRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 18, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
+  settingsRowText: { fontSize: 16, color: '#1E293B', fontWeight: '600' },
+  settingsRowValue: { fontSize: 16, color: '#64748B', fontWeight: '500' },
+  dangerZone: { marginTop: 30, paddingTop: 20, borderTopWidth: 1, borderTopColor: '#FEE2E2' },
+  dangerZoneTitle: { fontSize: 12, fontWeight: '800', color: '#EF4444', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12 },
+  deleteAccountBtn: { flexDirection: 'row', backgroundColor: '#EF233C', paddingVertical: 16, borderRadius: 16, justifyContent: 'center', alignItems: 'center' },
+  deleteAccountBtnText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
 });
