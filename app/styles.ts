@@ -114,4 +114,11 @@ export const styles = StyleSheet.create({
   dangerZoneTitle: { fontSize: 12, fontWeight: '800', color: '#8D99AE', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12 },
   deleteAccountBtn: { flexDirection: 'row', backgroundColor: '#EF233C', paddingVertical: 16, borderRadius: 16, justifyContent: 'center', alignItems: 'center' },
   deleteAccountBtnText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
+
+  // CHART STYLES
+  chartToggleContainer: { flexDirection: 'row', backgroundColor: '#F1F5F9', borderRadius: 12, padding: 4, marginBottom: 20 },
+  chartToggleBtn: { flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: 'center' },
+  chartToggleBtnActive: { backgroundColor: '#4361EE' },
+  chartToggleText: { fontSize: 14, fontWeight: '700', color: '#64748B' },
+  chartToggleTextActive: { color: '#FFFFFF' },
 });

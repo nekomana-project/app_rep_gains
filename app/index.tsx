@@ -6,16 +6,17 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createUserWithEmailAndPassword, deleteUser, sendPasswordResetEmail, signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { deleteDoc, doc, getDoc, setDoc } from 'firebase/firestore';
 import { useEffect, useState } from 'react';
-import { Alert, FlatList, Keyboard, KeyboardAvoidingView, Modal, Platform, Text, TextInput, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
+import { Alert, Dimensions, FlatList, Keyboard, KeyboardAvoidingView, Modal, Platform, Text, TextInput, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
 import { Calendar } from 'react-native-calendars';
+import { BarChart } from 'react-native-chart-kit'; // 🔥 NEW IMPORT
 import { auth, db } from '../firebaseConfig';
 
-// 🔥 NEW IMPORTS: Pull in your extracted files
 import { styles } from '../app/styles';
 import { TRANSLATIONS } from '../app/translations';
 import { DEFAULT_EXERCISES, ExerciseDef, Workout } from '../app/types';
 
 const getLocalToday = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+const screenWidth = Dimensions.get("window").width;
 
 const DismissKeyboardView = ({ children }: { children: React.ReactNode }) => {
   if (Platform.OS === 'web') return <>{children}</>;
@@ -32,20 +33,18 @@ export default function App() {
 
   const [userWeight, setUserWeight] = useState('');
   const [userWeightUnit, setUserWeightUnit] = useState<'lbs' | 'kg'>('kg');
-  const [showOnboarding, setShowOnboarding] = useState(false); // 🔥 1. Add this line
-
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  
   const [lang, setLang] = useState<'en' | 'nl'>('en');
-  const t = TRANSLATIONS[lang]; 
+  const t = TRANSLATIONS[lang] as any; 
 
   const [exercise, setExercise] = useState('');
   const [sets, setSets] = useState('');
   const [reps, setReps] = useState('');
   const [measurementValue, setMeasurementValue] = useState(''); 
   
-  // 🔥 NEW: SPLIT UNIT STATES 🔥
   const [trackType, setTrackType] = useState<'weight' | 'time'>('weight'); 
-  const [timeUnit, setTimeUnit] = useState<'sec' | 'min' | 'hr'>('min'); // Defaulting to minutes
-  
+  const [timeUnit, setTimeUnit] = useState<'sec' | 'min' | 'hr'>('min'); 
   const [workoutDate, setWorkoutDate] = useState(getLocalToday()); 
 
   const [manualCalories, setManualCalories] = useState('');
@@ -61,16 +60,19 @@ export default function App() {
   const [isCalendarOverviewVisible, setIsCalendarOverviewVisible] = useState(false); 
   const [isSettingsVisible, setIsSettingsVisible] = useState(false); 
 
+  // 🔥 NEW: CHART STATES 🔥
+  const [isChartVisible, setIsChartVisible] = useState(false);
+  const [chartDays, setChartDays] = useState<7 | 30>(7);
+
   const [exerciseList, setExerciseList] = useState<ExerciseDef[]>(DEFAULT_EXERCISES);
   const [newCustomExercise, setNewCustomExercise] = useState('');
   const [newExerciseIntensity, setNewExerciseIntensity] = useState<number>(5.0); 
 
   useEffect(() => { loadData(); }, []);
 
-  // 🔥 NEW: WRAPPER TO RESET CALORIE MATH WHEN INPUTS CHANGE
   const handleParamChange = (setter: React.Dispatch<React.SetStateAction<any>>, value: any) => {
     setter(value);
-    setIsCaloriesOverridden(false); // If they tweak reps/time, we allow the math to recalculate
+    setIsCaloriesOverridden(false); 
   };
 
   useEffect(() => {
@@ -87,7 +89,6 @@ export default function App() {
 
     let timeInHours = 0;
     
-    // 🔥 UPDATED MATH TO HANDLE MIN/HR 🔥
     if (trackType === 'time') {
       if (timeUnit === 'sec') timeInHours = (Number(measurementValue) || 0) / 3600;
       else if (timeUnit === 'min') timeInHours = (Number(measurementValue) || 0) / 60;
@@ -114,15 +115,16 @@ export default function App() {
           const data = docSnap.data();
           setWorkouts(data.workouts || []);
           if (data.language) setLang(data.language);
+          if (data.exercises) setExerciseList(data.exercises.map((e: any) => typeof e === 'string' ? { name: e, met: 5.0 } : e));
+          else setExerciseList(DEFAULT_EXERCISES);
+
           if (data.userWeight) {
             setUserWeight(data.userWeight);
+            if (data.userWeightUnit) setUserWeightUnit(data.userWeightUnit);
             setShowOnboarding(false);
           } else {
             setShowOnboarding(true);
           }
-          if (data.userWeightUnit) setUserWeightUnit(data.userWeightUnit);
-          if (data.exercises) setExerciseList(data.exercises.map((e: any) => typeof e === 'string' ? { name: e, met: 5.0 } : e));
-          else setExerciseList(DEFAULT_EXERCISES);
         }
       } else {
         const savedWorkouts = await AsyncStorage.getItem('@gym_workouts');
@@ -134,14 +136,14 @@ export default function App() {
 
         const savedWeight = await AsyncStorage.getItem('@user_weight');
         const savedUnit = await AsyncStorage.getItem('@user_weight_unit');
+        
         if (savedWeight) {
           setUserWeight(savedWeight);
+          if (savedUnit === 'lbs' || savedUnit === 'kg') setUserWeightUnit(savedUnit);
           setShowOnboarding(false);
         } else {
           setShowOnboarding(true);
         }
-        if (savedWeight) setUserWeight(savedWeight);
-        if (savedUnit === 'lbs' || savedUnit === 'kg') setUserWeightUnit(savedUnit);
       }
 
       const savedLang = await AsyncStorage.getItem('@app_language');
@@ -197,10 +199,7 @@ export default function App() {
       setAppMode('cloud_app');
       setWorkouts([]); 
       saveWorkouts([]); 
-      
-      // 🔥 ADD THIS LINE: Explicitly trigger the onboarding for new accounts
       setShowOnboarding(true); 
-      
     } catch (error: any) { Alert.alert('Registration Error', error.message); } 
     finally { setIsLoading(false); }
   };
@@ -298,7 +297,6 @@ export default function App() {
     setReps(workout.reps); 
     setMeasurementValue(workout.value); 
     
-    // Parse the unit to properly switch the toggles
     const isTime = workout.unit === 'sec' || workout.unit === 'min' || workout.unit === 'hr';
     setTrackType(isTime ? 'time' : 'weight');
     if (isTime) setTimeUnit(workout.unit as 'sec'|'min'|'hr');
@@ -321,13 +319,48 @@ export default function App() {
     return marks;
   };
 
+  // 🔥 NEW: CHART DATA GENERATOR 🔥
+  const getChartData = () => {
+    const labels = [];
+    const dataPoints = [];
+    const today = new Date();
+
+    // Loop backwards to build an array of dates from oldest to today
+    for (let i = chartDays - 1; i >= 0; i--) {
+      const d = new Date(today);
+      d.setDate(d.getDate() - i);
+      const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+      // If viewing 30 days, showing 30 text labels overlaps. So we only show a label every 5 days.
+      let labelText = '';
+      if (chartDays === 7) {
+        // e.g., "Mon", "Tue"
+        labelText = d.toLocaleDateString(lang === 'nl' ? 'nl-NL' : 'en-US', { weekday: 'short' });
+      } else {
+        // e.g., "12/05"
+        if (i % 5 === 0 || i === 0) {
+          labelText = `${d.getDate()}/${d.getMonth() + 1}`;
+        }
+      }
+
+      labels.push(labelText);
+
+      // Sum all calories for this specific date string
+      const dayWorkouts = workouts.filter(w => w.date === dateStr);
+      const dayCals = dayWorkouts.reduce((sum, w) => sum + (w.calories || 0), 0);
+      dataPoints.push(dayCals);
+    }
+
+    return {
+      labels: labels,
+      datasets: [{ data: dataPoints }]
+    };
+  };
+
   const displayedWorkouts = filterDate ? workouts.filter((w) => w.date === filterDate) : workouts;
   const dailyCalories = displayedWorkouts.reduce((sum, w) => sum + (w.calories || 0), 0);
   const dailySets = displayedWorkouts.reduce((sum, w) => sum + (Number(w.sets) || 0), 0);
 
-  // ==========================================
-  // 🚪 RENDER: AUTH SCREENS
-  // ==========================================
   if (appMode === 'gatekeeper' || appMode === 'login_form' || appMode === 'register_form') {
     return (
       <AuthView 
@@ -341,9 +374,6 @@ export default function App() {
     );
   }
   
-  // ==========================================
-  // 🚀 RENDER: ONBOARDING (Weight Check)
-  // ==========================================
   if (isDataLoaded && (appMode === 'cloud_app' || appMode === 'offline_app') && showOnboarding) {
     return (
       <DismissKeyboardView>
@@ -362,7 +392,7 @@ export default function App() {
                 <TouchableOpacity style={[styles.unitOptionCompact, userWeightUnit === 'lbs' && styles.unitOptionActive]} onPress={() => setUserWeightUnit('lbs')}><Text style={[styles.unitOptionText, userWeightUnit === 'lbs' && styles.unitOptionTextActive]}>lbs</Text></TouchableOpacity>
               </View>
             </View>
-            <TouchableOpacity style={styles.authPrimaryBtn} onPress={() => { saveProfileData(userWeight, userWeightUnit);  setShowOnboarding(false);  Keyboard.dismiss(); }}>
+            <TouchableOpacity style={styles.authPrimaryBtn} onPress={() => { saveProfileData(userWeight, userWeightUnit); setShowOnboarding(false); Keyboard.dismiss(); }}>
               <Text style={styles.authPrimaryBtnText}>{t.continueBtn}</Text>
               <Ionicons name="arrow-forward" size={20} color="#FFF" style={{marginLeft: 8}}/>
             </TouchableOpacity>
@@ -372,9 +402,6 @@ export default function App() {
     );
   }
 
-  // ==========================================
-  // 📱 RENDER: MAIN APP 
-  // ==========================================
   return (    
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined} enabled={Platform.OS !== 'web'}>
       <View style={styles.container}>
@@ -426,7 +453,6 @@ export default function App() {
                 </TouchableOpacity>
               </View>
 
-              {/* 🔥 NEW: SUB-MENU FOR TIME FORMATS 🔥 */}
               {trackType === 'time' && (
                 <View style={[styles.unitToggleContainer, {marginTop: -10, marginBottom: 20}]}>
                   <TouchableOpacity style={[styles.unitOption, timeUnit === 'sec' && styles.unitOptionActive]} onPress={() => handleParamChange(setTimeUnit, 'sec')}><Text style={[styles.unitOptionText, timeUnit === 'sec' && styles.unitOptionTextActive]}>{t.secOption}</Text></TouchableOpacity>
@@ -461,9 +487,25 @@ export default function App() {
         <View style={styles.listContainer}>
           <View style={styles.listHeaderRow}>
             <Text style={styles.sectionTitle}>{t.history}</Text>
+            
+            {/* 🔥 ADDED STATS BUTTON NEXT TO CALENDAR 🔥 */}
             <View style={{flexDirection: 'row', gap: 10}}>
-              {!isFormVisible && (<TouchableOpacity style={[styles.calendarOverviewBtn, filterDate && {backgroundColor: '#4361EE'}]} onPress={() => setIsCalendarOverviewVisible(true)}><Ionicons name="calendar" size={20} color={filterDate ? "#FFF" : "#4361EE"} /></TouchableOpacity>)}
-              {!isFormVisible && (<TouchableOpacity style={styles.addButton} onPress={() => setIsFormVisible(true)}><Ionicons name="add" size={20} color="#FFF" /><Text style={styles.addButtonText}>{t.logWorkout}</Text></TouchableOpacity>)}
+              {!isFormVisible && (
+                <TouchableOpacity style={styles.calendarOverviewBtn} onPress={() => setIsChartVisible(true)}>
+                  <Ionicons name="stats-chart" size={20} color="#4361EE" />
+                </TouchableOpacity>
+              )}
+              {!isFormVisible && (
+                <TouchableOpacity style={[styles.calendarOverviewBtn, filterDate && {backgroundColor: '#4361EE'}]} onPress={() => setIsCalendarOverviewVisible(true)}>
+                  <Ionicons name="calendar" size={20} color={filterDate ? "#FFF" : "#4361EE"} />
+                </TouchableOpacity>
+              )}
+              {!isFormVisible && (
+                <TouchableOpacity style={styles.addButton} onPress={() => setIsFormVisible(true)}>
+                  <Ionicons name="add" size={20} color="#FFF" />
+                  <Text style={styles.addButtonText}>{t.logWorkout}</Text>
+                </TouchableOpacity>
+              )}
             </View>
           </View>
 
@@ -484,16 +526,10 @@ export default function App() {
           <FlatList
               data={displayedWorkouts} keyExtractor={(item) => item.id} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" refreshing={isRefreshing} onRefresh={handleRefresh}     
               renderItem={({ item }) => (
-        // 🔥 Replaced 30 lines of code with this one component
-              <WorkoutCard 
-                item={item} 
-                userWeightUnit={userWeightUnit} 
-                onEdit={handleEdit} 
-                onDelete={handleDelete} 
-              />
+              <WorkoutCard item={item} userWeightUnit={userWeightUnit} onEdit={handleEdit} onDelete={handleDelete} />
             )}
             ListEmptyComponent={<Text style={styles.emptyText}>No workouts found for this date.</Text>}
-        />
+          />
         </View>
 
         {isDropdownVisible && (
@@ -506,7 +542,7 @@ export default function App() {
               </View>
 
               <View style={styles.customExerciseCard}>
-                <TextInput style={styles.customExerciseInput} placeholder={t.typeNew} placeholderTextColor="#A0AABF" value={newCustomExercise} onChangeText={setNewCustomExercise} />
+                <TextInput style={styles.customExerciseInput} placeholder={t.typeNew || "Type new exercise..."} placeholderTextColor="#A0AABF" value={newCustomExercise} onChangeText={setNewCustomExercise} />
                 <View style={{flexDirection: 'row', alignItems: 'center', marginTop: 10, gap: 8}}>
                   <Text style={{fontSize: 12, fontWeight: '700', color: '#8D99AE'}}>{t.intensity}</Text>
                   <TouchableOpacity style={[styles.intensityBtn, newExerciseIntensity === 3.0 && styles.intensityBtnActive]} onPress={() => setNewExerciseIntensity(3.0)}><Text style={[styles.intensityBtnText, newExerciseIntensity === 3.0 && styles.intensityBtnTextActive]}>{t.light}</Text></TouchableOpacity>
@@ -553,6 +589,56 @@ export default function App() {
             </View>
           </View>
         </Modal>
+
+        {/* 🔥 NEW: CHART MODAL 🔥 */}
+        {isChartVisible && (
+          <Modal visible={isChartVisible} transparent={true} animationType="fade">
+            <View style={styles.modalBackground}>
+              <View style={styles.modalContent}>
+                
+                <View style={styles.modalHeader}>
+                  <Text style={styles.modalTitle}>{t.statsOverview || "Stats & Progress"}</Text>
+                  <TouchableOpacity onPress={() => setIsChartVisible(false)}><Ionicons name="close-circle" size={28} color="#8D99AE" /></TouchableOpacity>
+                </View>
+
+                {/* Range Toggle */}
+                <View style={styles.chartToggleContainer}>
+                  <TouchableOpacity style={[styles.chartToggleBtn, chartDays === 7 && styles.chartToggleBtnActive]} onPress={() => setChartDays(7)}>
+                    <Text style={[styles.chartToggleText, chartDays === 7 && styles.chartToggleTextActive]}>{t.last7Days || "7 Days"}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[styles.chartToggleBtn, chartDays === 30 && styles.chartToggleBtnActive]} onPress={() => setChartDays(30)}>
+                    <Text style={[styles.chartToggleText, chartDays === 30 && styles.chartToggleTextActive]}>{t.last30Days || "30 Days"}</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* The Chart */}
+                <View style={{alignItems: 'center'}}>
+                  <BarChart
+                    data={getChartData()}
+                    width={screenWidth - 48} // Padding minus margins
+                    height={220}
+                    yAxisLabel=""
+                    yAxisSuffix=" c" // Keep it short to fit the screen
+                    chartConfig={{
+                      backgroundColor: "#ffffff",
+                      backgroundGradientFrom: "#ffffff",
+                      backgroundGradientTo: "#ffffff",
+                      decimalPlaces: 0, 
+                      color: (opacity = 1) => `rgba(67, 97, 238, ${opacity})`,
+                      labelColor: (opacity = 1) => `rgba(141, 153, 174, ${opacity})`,
+                      style: { borderRadius: 16 },
+                      barPercentage: chartDays === 30 ? 0.3 : 0.6, // Make bars thinner if showing 30 days
+                    }}
+                    style={{ borderRadius: 16 }}
+                    showValuesOnTopOfBars={chartDays === 7} // Only show floating numbers on 7-day view
+                    fromZero={true}
+                  />
+                </View>
+
+              </View>
+            </View>
+          </Modal>
+        )}
         
         {isSettingsVisible && (
           <Modal visible={isSettingsVisible} transparent={true} animationType="fade">
