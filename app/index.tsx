@@ -1,4 +1,5 @@
 import AuthView from '../components/AuthView';
+import SocialModal from '../components/SocialModal';
 import WorkoutCard from '../components/WorkoutCard';
 
 import { Ionicons } from '@expo/vector-icons';
@@ -6,7 +7,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createUserWithEmailAndPassword, deleteUser, sendPasswordResetEmail, signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { deleteDoc, doc, getDoc, setDoc } from 'firebase/firestore';
 import { useEffect, useState } from 'react';
-import { Alert, Dimensions, FlatList, Keyboard, KeyboardAvoidingView, Modal, Platform, Text, TextInput, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
+import { Alert, Dimensions, FlatList, Keyboard, KeyboardAvoidingView, Modal, Platform, ScrollView, Text, TextInput, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
 import { Calendar } from 'react-native-calendars';
 import { BarChart } from 'react-native-chart-kit'; // 🔥 NEW IMPORT
 import { auth, db } from '../firebaseConfig';
@@ -16,6 +17,12 @@ import { TRANSLATIONS } from '../app/translations';
 import { DEFAULT_EXERCISES, ExerciseDef, Workout } from '../app/types';
 
 const getLocalToday = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+const generateFriendCode = () => {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  let result = '';
+  for (let i = 0; i < 5; i++) result += chars.charAt(Math.floor(Math.random() * chars.length));
+  return result;
+};
 const screenWidth = Dimensions.get("window").width;
 
 const DismissKeyboardView = ({ children }: { children: React.ReactNode }) => {
@@ -34,6 +41,12 @@ export default function App() {
   const [userWeight, setUserWeight] = useState('');
   const [userWeightUnit, setUserWeightUnit] = useState<'lbs' | 'kg'>('kg');
   const [showOnboarding, setShowOnboarding] = useState(false);
+
+  // 🔥 NEW SOCIAL STATES
+  const [displayName, setDisplayName] = useState('');
+  const [friendCode, setFriendCode] = useState('');
+  const [shareWeight, setShareWeight] = useState(false);
+  const [isSocialVisible, setIsSocialVisible] = useState(false);
   
   const [lang, setLang] = useState<'en' | 'nl'>('en');
   const t = TRANSLATIONS[lang] as any; 
@@ -116,6 +129,9 @@ export default function App() {
           setWorkouts(data.workouts || []);
           if (data.language) setLang(data.language);
           if (data.exercises) setExerciseList(data.exercises.map((e: any) => typeof e === 'string' ? { name: e, met: 5.0 } : e));
+          if (data.displayName) setDisplayName(data.displayName);
+          if (data.friendCode) setFriendCode(data.friendCode);
+          if (data.shareWeight !== undefined) setShareWeight(data.shareWeight);
           else setExerciseList(DEFAULT_EXERCISES);
 
           if (data.userWeight) {
@@ -152,11 +168,16 @@ export default function App() {
     finally { setIsDataLoaded(true); }
   };
 
-  const saveProfileData = async (weight: string, unit: 'lbs'|'kg') => {
+  const saveProfileData = async (weight: string, unit: 'lbs'|'kg', name: string, isShared: boolean, code: string) => {
     try {
       const user = auth.currentUser;
       if (user && appMode === 'cloud_app') {
-        await setDoc(doc(db, 'users', user.uid), { userWeight: weight, userWeightUnit: unit }, { merge: true });
+        // If they don't have a code yet, generate one and save it forever
+        const finalCode = code || generateFriendCode();
+        setFriendCode(finalCode);
+        await setDoc(doc(db, 'users', user.uid), { 
+          userWeight: weight, userWeightUnit: unit, displayName: name, shareWeight: isShared, friendCode: finalCode 
+        }, { merge: true });
       } else {
         await AsyncStorage.setItem('@user_weight', weight);
         await AsyncStorage.setItem('@user_weight_unit', unit);
@@ -384,6 +405,13 @@ export default function App() {
             <Text style={{color: '#8D99AE', marginTop: 10, textAlign: 'center', lineHeight: 22}}>{t.onboardingSub}</Text>
           </View>
           <View style={styles.authFormBox}>
+            {appMode === 'cloud_app' && (
+              <>
+                <Text style={styles.inputLabel}>{t.displayName}</Text>
+                <TextInput style={styles.authInput} placeholder="NekoBoi" value={displayName} onChangeText={setDisplayName} maxLength={15} />
+              </>
+            )}
+            
             <Text style={styles.inputLabel}>{t.bodyweight}</Text>
             <View style={{flexDirection: 'row', gap: 10, marginBottom: 20}}>
               <TextInput style={[styles.authInput, {flex: 1, marginBottom: 0}]} placeholder="0" keyboardType="numeric" value={userWeight} onChangeText={setUserWeight} />
@@ -392,7 +420,7 @@ export default function App() {
                 <TouchableOpacity style={[styles.unitOptionCompact, userWeightUnit === 'lbs' && styles.unitOptionActive]} onPress={() => setUserWeightUnit('lbs')}><Text style={[styles.unitOptionText, userWeightUnit === 'lbs' && styles.unitOptionTextActive]}>lbs</Text></TouchableOpacity>
               </View>
             </View>
-            <TouchableOpacity style={styles.authPrimaryBtn} onPress={() => { saveProfileData(userWeight, userWeightUnit); setShowOnboarding(false); Keyboard.dismiss(); }}>
+            <TouchableOpacity style={styles.authPrimaryBtn} onPress={() => { saveProfileData(userWeight, userWeightUnit, displayName, shareWeight, friendCode); setShowOnboarding(false); Keyboard.dismiss(); }}>
               <Text style={styles.authPrimaryBtnText}>{t.continueBtn}</Text>
               <Ionicons name="arrow-forward" size={20} color="#FFF" style={{marginLeft: 8}}/>
             </TouchableOpacity>
@@ -406,15 +434,14 @@ export default function App() {
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined} enabled={Platform.OS !== 'web'}>
       <View style={styles.container}>
       
-        <View style={styles.headerContainer}>
-          <View>
-            <Text style={styles.headerTitle}>{t.appTitle}</Text>
-            {appMode === 'cloud_app' && (
-              <View style={{flexDirection: 'row', alignItems: 'center', marginTop: 4}}><Ionicons name="cloud-done" size={12} color="#10B981" /><Text style={{fontSize: 12, color: '#10B981', marginLeft: 4, fontWeight: '600'}}>Synced to Cloud</Text></View>
-            )}
+        <View style={{flexDirection: 'row', gap: 15}}>
+            <TouchableOpacity onPress={() => setIsSocialVisible(true)} style={{padding: 4}}>
+              <Ionicons name="people-outline" size={28} color="#1E293B" />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setIsSettingsVisible(true)} style={{padding: 4}}>
+              <Ionicons name="settings-outline" size={28} color="#1E293B" />
+            </TouchableOpacity>
           </View>
-          <TouchableOpacity onPress={() => setIsSettingsVisible(true)} style={{padding: 4}}><Ionicons name="settings-outline" size={28} color="#1E293B" /></TouchableOpacity>
-        </View>
 
         {isFormVisible && (
           <DismissKeyboardView>
@@ -640,50 +667,82 @@ export default function App() {
           </Modal>
         )}
         
+        {/* ⚙️ SETTINGS MODAL */}
         {isSettingsVisible && (
           <Modal visible={isSettingsVisible} transparent={true} animationType="fade">
             <TouchableWithoutFeedback onPress={() => setIsSettingsVisible(false)}>
               <View style={styles.modalBackground}>
                 <TouchableWithoutFeedback>
-                  <View style={styles.modalContent}>
+                  {/* 🔥 FIXED: Added maxHeight so it never gets pushed off the screen */}
+                  <View style={[styles.modalContent, { maxHeight: '90%' }]}>
                     
                     <View style={styles.modalHeader}>
                       <Text style={styles.modalTitle}>{t.settings}</Text>
                       <TouchableOpacity onPress={() => setIsSettingsVisible(false)}><Ionicons name="close-circle" size={28} color="#8D99AE" /></TouchableOpacity>
                     </View>
 
-                    <TouchableOpacity style={styles.settingsRow} onPress={toggleLanguage}>
-                      <View style={{flexDirection: 'row', alignItems: 'center'}}><Ionicons name="language-outline" size={24} color="#4361EE" style={{marginRight: 12}} /><Text style={styles.settingsRowText}>{t.language}</Text></View>
-                      <Text style={styles.settingsRowValue}>{lang === 'en' ? '🇬🇧 English' : '🇳🇱 Nederlands'}</Text>
-                    </TouchableOpacity>
-
-                    <View style={styles.profileSection}>
-                      <Text style={styles.dangerZoneTitle}>{t.myProfile}</Text>
-                      <View style={{flexDirection: 'row', gap: 10, alignItems: 'center'}}>
-                        <TextInput style={[styles.input, {flex: 1, marginBottom: 0}]} keyboardType="numeric" value={userWeight} onChangeText={setUserWeight} />
-                        <View style={styles.unitToggleContainerCompact}>
-                          <TouchableOpacity style={[styles.unitOptionCompact, userWeightUnit === 'kg' && styles.unitOptionActive]} onPress={() => setUserWeightUnit('kg')}><Text style={[styles.unitOptionText, userWeightUnit === 'kg' && styles.unitOptionTextActive]}>kg</Text></TouchableOpacity>
-                          <TouchableOpacity style={[styles.unitOptionCompact, userWeightUnit === 'lbs' && styles.unitOptionActive]} onPress={() => setUserWeightUnit('lbs')}><Text style={[styles.unitOptionText, userWeightUnit === 'lbs' && styles.unitOptionTextActive]}>lbs</Text></TouchableOpacity>
-                        </View>
-                        <TouchableOpacity style={{backgroundColor: '#1E293B', padding: 12, borderRadius: 12}} onPress={() => { saveProfileData(userWeight, userWeightUnit); Alert.alert('Saved!', 'Profile updated.'); Keyboard.dismiss(); }}><Ionicons name="checkmark" size={20} color="#FFF" /></TouchableOpacity>
-                      </View>
-                    </View>
-
-                    {appMode === 'cloud_app' ? (
-                      <>
-                        <TouchableOpacity style={styles.settingsRow} onPress={() => { setIsSettingsVisible(false); handleLogout(); }}>
-                          <View style={{flexDirection: 'row', alignItems: 'center'}}><Ionicons name="log-out-outline" size={24} color="#64748B" style={{marginRight: 12}} /><Text style={styles.settingsRowText}>{t.logout}</Text></View>
-                        </TouchableOpacity>
-                        <View style={styles.dangerZone}>
-                          <Text style={styles.dangerZoneTitle}>{t.dangerZone}</Text>
-                          <TouchableOpacity style={styles.deleteAccountBtn} onPress={() => { setIsSettingsVisible(false); handleDeleteAccount(); }}><Ionicons name="trash-outline" size={20} color="#FFF" style={{marginRight: 8}} /><Text style={styles.deleteAccountBtnText}>{t.deleteAccountBtn}</Text></TouchableOpacity>
-                        </View>
-                      </>
-                    ) : (
-                      <TouchableOpacity style={styles.settingsRow} onPress={() => { setIsSettingsVisible(false); setAppMode('gatekeeper'); setWorkouts([]); setExerciseList(DEFAULT_EXERCISES); }}>
-                        <View style={{flexDirection: 'row', alignItems: 'center'}}><Ionicons name="log-in-outline" size={24} color="#4361EE" style={{marginRight: 12}} /><Text style={styles.settingsRowText}>{t.exitOffline}</Text></View>
+                    {/* 🔥 FIXED: Added ScrollView so tall menus can be scrolled */}
+                    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 20 }}>
+                      <TouchableOpacity style={styles.settingsRow} onPress={toggleLanguage}>
+                        <View style={{flexDirection: 'row', alignItems: 'center'}}><Ionicons name="language-outline" size={24} color="#4361EE" style={{marginRight: 12}} /><Text style={styles.settingsRowText}>{t.language}</Text></View>
+                        <Text style={styles.settingsRowValue}>{lang === 'en' ? '🇬🇧 English' : '🇳🇱 Nederlands'}</Text>
                       </TouchableOpacity>
-                    )}
+
+                      <View style={styles.profileSection}>
+                        <Text style={styles.dangerZoneTitle}>{t.myProfile}</Text>
+                        
+                        {appMode === 'cloud_app' && (
+                          <>
+                            <Text style={[styles.inputLabel, {marginTop: 10}]}>{t.displayName}</Text>
+                            <TextInput style={styles.input} value={displayName} onChangeText={setDisplayName} maxLength={15} />
+                            
+                            <View style={{flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, backgroundColor: '#F8FAFC', padding: 16, borderRadius: 16, borderWidth: 1, borderColor: '#E2E8F0'}}>
+                              <View>
+                                <Text style={{fontSize: 14, fontWeight: '700', color: '#1E293B'}}>{t.friendCode}</Text>
+                                <Text style={{fontSize: 12, color: '#8D99AE', marginTop: 2}}>Share this to add friends</Text>
+                              </View>
+                              <Text style={{fontSize: 18, fontWeight: '900', color: '#4361EE', letterSpacing: 2}}>{friendCode || '------'}</Text>
+                            </View>
+                          </>
+                        )}
+
+                        <Text style={styles.inputLabel}>{t.bodyweight}</Text>
+                        <View style={{flexDirection: 'row', gap: 10, alignItems: 'center'}}>
+                          <TextInput style={[styles.input, {flex: 1, marginBottom: 0}]} keyboardType="numeric" value={userWeight} onChangeText={setUserWeight} />
+                          <View style={styles.unitToggleContainerCompact}>
+                            <TouchableOpacity style={[styles.unitOptionCompact, userWeightUnit === 'kg' && styles.unitOptionActive]} onPress={() => setUserWeightUnit('kg')}><Text style={[styles.unitOptionText, userWeightUnit === 'kg' && styles.unitOptionTextActive]}>kg</Text></TouchableOpacity>
+                            <TouchableOpacity style={[styles.unitOptionCompact, userWeightUnit === 'lbs' && styles.unitOptionActive]} onPress={() => setUserWeightUnit('lbs')}><Text style={[styles.unitOptionText, userWeightUnit === 'lbs' && styles.unitOptionTextActive]}>lbs</Text></TouchableOpacity>
+                          </View>
+                        </View>
+
+                        {appMode === 'cloud_app' && (
+                          <TouchableOpacity style={{flexDirection: 'row', alignItems: 'center', marginTop: 20}} onPress={() => setShareWeight(!shareWeight)}>
+                            <Ionicons name={shareWeight ? "checkbox" : "square-outline"} size={24} color={shareWeight ? "#4361EE" : "#A0AABF"} style={{marginRight: 10}} />
+                            <Text style={{fontSize: 15, color: '#1E293B', fontWeight: '500'}}>{t.shareWeight}</Text>
+                          </TouchableOpacity>
+                        )}
+
+                        <TouchableOpacity style={{backgroundColor: '#1E293B', padding: 16, borderRadius: 12, marginTop: 20, alignItems: 'center'}} onPress={() => { saveProfileData(userWeight, userWeightUnit, displayName, shareWeight, friendCode); setIsSettingsVisible(false); Keyboard.dismiss(); }}>
+                          <Text style={{color: '#FFF', fontWeight: '700'}}>{t.updateProfile || "Save Profile"}</Text>
+                        </TouchableOpacity>
+                      </View>
+
+                      {appMode === 'cloud_app' ? (
+                        <>
+                          <TouchableOpacity style={styles.settingsRow} onPress={() => { setIsSettingsVisible(false); handleLogout(); }}>
+                            <View style={{flexDirection: 'row', alignItems: 'center'}}><Ionicons name="log-out-outline" size={24} color="#64748B" style={{marginRight: 12}} /><Text style={styles.settingsRowText}>{t.logout}</Text></View>
+                          </TouchableOpacity>
+                          <View style={styles.dangerZone}>
+                            <Text style={styles.dangerZoneTitle}>{t.dangerZone}</Text>
+                            <TouchableOpacity style={styles.deleteAccountBtn} onPress={() => { setIsSettingsVisible(false); handleDeleteAccount(); }}><Ionicons name="trash-outline" size={20} color="#FFF" style={{marginRight: 8}} /><Text style={styles.deleteAccountBtnText}>{t.deleteAccountBtn}</Text></TouchableOpacity>
+                          </View>
+                        </>
+                      ) : (
+                        <TouchableOpacity style={styles.settingsRow} onPress={() => { setIsSettingsVisible(false); setAppMode('gatekeeper'); setWorkouts([]); setExerciseList(DEFAULT_EXERCISES); }}>
+                          <View style={{flexDirection: 'row', alignItems: 'center'}}><Ionicons name="log-in-outline" size={24} color="#4361EE" style={{marginRight: 12}} /><Text style={styles.settingsRowText}>{t.exitOffline}</Text></View>
+                        </TouchableOpacity>
+                      )}
+                    </ScrollView>
 
                   </View>
                 </TouchableWithoutFeedback>
@@ -691,7 +750,15 @@ export default function App() {
             </TouchableWithoutFeedback>
           </Modal>
         )}
+        {/* 🔥 THE NEW SOCIAL MODAL 🔥 */}
+        <SocialModal 
+          isVisible={isSocialVisible} 
+          onClose={() => setIsSocialVisible(false)} 
+          t={t} 
+          friendCode={friendCode}
+        />
       </View>
     </KeyboardAvoidingView>
+    
   );
 }

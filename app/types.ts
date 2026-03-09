@@ -15,6 +15,15 @@ export type ExerciseDef = {
   met: number; 
 };
 
+// 🔥 NEW: Cloud User Profile Type
+export type UserProfile = {
+  uid: string;
+  displayName: string;
+  friendCode: string;
+  userWeight?: string;
+  shareWeight: boolean;
+};
+
 export const DEFAULT_EXERCISES: ExerciseDef[] = [
   { name: 'Bench Press', met: 5.0 }, { name: 'Squat', met: 6.0 }, { name: 'Deadlift', met: 6.0 },
   { name: 'Plank', met: 4.0 }, { name: 'Running', met: 8.0 }, { name: 'HIIT Session', met: 8.0 },
