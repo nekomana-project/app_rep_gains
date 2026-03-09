@@ -32,7 +32,8 @@ export default function App() {
 
   const [userWeight, setUserWeight] = useState('');
   const [userWeightUnit, setUserWeightUnit] = useState<'lbs' | 'kg'>('kg');
-  
+  const [showOnboarding, setShowOnboarding] = useState(false); // 🔥 1. Add this line
+
   const [lang, setLang] = useState<'en' | 'nl'>('en');
   const t = TRANSLATIONS[lang]; 
 
@@ -113,7 +114,12 @@ export default function App() {
           const data = docSnap.data();
           setWorkouts(data.workouts || []);
           if (data.language) setLang(data.language);
-          if (data.userWeight) setUserWeight(data.userWeight);
+          if (data.userWeight) {
+            setUserWeight(data.userWeight);
+            setShowOnboarding(false);
+          } else {
+            setShowOnboarding(true);
+          }
           if (data.userWeightUnit) setUserWeightUnit(data.userWeightUnit);
           if (data.exercises) setExerciseList(data.exercises.map((e: any) => typeof e === 'string' ? { name: e, met: 5.0 } : e));
           else setExerciseList(DEFAULT_EXERCISES);
@@ -128,6 +134,12 @@ export default function App() {
 
         const savedWeight = await AsyncStorage.getItem('@user_weight');
         const savedUnit = await AsyncStorage.getItem('@user_weight_unit');
+        if (savedWeight) {
+          setUserWeight(savedWeight);
+          setShowOnboarding(false);
+        } else {
+          setShowOnboarding(true);
+        }
         if (savedWeight) setUserWeight(savedWeight);
         if (savedUnit === 'lbs' || savedUnit === 'kg') setUserWeightUnit(savedUnit);
       }
@@ -185,6 +197,10 @@ export default function App() {
       setAppMode('cloud_app');
       setWorkouts([]); 
       saveWorkouts([]); 
+      
+      // 🔥 ADD THIS LINE: Explicitly trigger the onboarding for new accounts
+      setShowOnboarding(true); 
+      
     } catch (error: any) { Alert.alert('Registration Error', error.message); } 
     finally { setIsLoading(false); }
   };
@@ -328,7 +344,7 @@ export default function App() {
   // ==========================================
   // 🚀 RENDER: ONBOARDING (Weight Check)
   // ==========================================
-  if (isDataLoaded && (appMode === 'cloud_app' || appMode === 'offline_app') && userWeight === '') {
+  if (isDataLoaded && (appMode === 'cloud_app' || appMode === 'offline_app') && showOnboarding) {
     return (
       <DismissKeyboardView>
         <View style={styles.authContainer}>
@@ -346,7 +362,7 @@ export default function App() {
                 <TouchableOpacity style={[styles.unitOptionCompact, userWeightUnit === 'lbs' && styles.unitOptionActive]} onPress={() => setUserWeightUnit('lbs')}><Text style={[styles.unitOptionText, userWeightUnit === 'lbs' && styles.unitOptionTextActive]}>lbs</Text></TouchableOpacity>
               </View>
             </View>
-            <TouchableOpacity style={styles.authPrimaryBtn} onPress={() => { saveProfileData(userWeight, userWeightUnit); Keyboard.dismiss(); }}>
+            <TouchableOpacity style={styles.authPrimaryBtn} onPress={() => { saveProfileData(userWeight, userWeightUnit);  setShowOnboarding(false);  Keyboard.dismiss(); }}>
               <Text style={styles.authPrimaryBtnText}>{t.continueBtn}</Text>
               <Ionicons name="arrow-forward" size={20} color="#FFF" style={{marginLeft: 8}}/>
             </TouchableOpacity>
