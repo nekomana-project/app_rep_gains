@@ -48,6 +48,7 @@ export default function App() {
   const [shareWeight, setShareWeight] = useState(false);
   const [isSocialVisible, setIsSocialVisible] = useState(false);
   
+  
   const [lang, setLang] = useState<'en' | 'nl'>('en');
   const t = TRANSLATIONS[lang] as any; 
 
@@ -69,6 +70,7 @@ export default function App() {
   const [filterDate, setFilterDate] = useState<string | null>(null);
 
   const [isDropdownVisible, setIsDropdownVisible] = useState(false);
+  const [isAddCustomVisible, setIsAddCustomVisible] = useState(false); // 🔥 NEW STATE
   const [isDatePickerVisible, setIsDatePickerVisible] = useState(false); 
   const [isCalendarOverviewVisible, setIsCalendarOverviewVisible] = useState(false); 
   const [isSettingsVisible, setIsSettingsVisible] = useState(false); 
@@ -201,10 +203,52 @@ export default function App() {
     } catch (error) { console.error("Error saving exercises:", error); }
   };
 
+  // 🔥 NEW: Seamlessly merges local offline data into the cloud!
+  const syncLocalWithCloud = async (uid: string) => {
+    try {
+      const localWorkoutsRaw = await AsyncStorage.getItem('@gym_workouts');
+      const localWorkouts = localWorkoutsRaw ? JSON.parse(localWorkoutsRaw) : [];
+      const localExercisesRaw = await AsyncStorage.getItem('@custom_exercises');
+      const localExercises = localExercisesRaw ? JSON.parse(localExercisesRaw) : [];
+
+      if (localWorkouts.length === 0 && localExercises.length === 0) return; // Nothing to sync
+
+      const docSnap = await getDoc(doc(db, 'users', uid));
+      let cloudWorkouts: Workout[] = [];
+      let cloudExercises: ExerciseDef[] = [];
+
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        cloudWorkouts = data.workouts || [];
+        cloudExercises = data.exercises || [];
+      }
+
+      // Merge and deduplicate by ID
+      const combinedWorkouts = [...cloudWorkouts, ...localWorkouts];
+      const uniqueWorkouts = Array.from(new Map(combinedWorkouts.map(item => [item.id, item])).values());
+      uniqueWorkouts.sort((a, b) => Number(b.id) - Number(a.id));
+
+      // Merge custom exercises (deduplicate by Name)
+      const combinedExercises = [...cloudExercises, ...localExercises];
+      const uniqueExercises = Array.from(new Map(combinedExercises.map(item => [item.name.toLowerCase(), item])).values());
+
+      await setDoc(doc(db, 'users', uid), {
+        workouts: uniqueWorkouts,
+        exercises: uniqueExercises
+      }, { merge: true });
+
+    } catch (e) { console.error("Sync error:", e); }
+  };
+
   const handleLogin = async () => {
     setIsLoading(true);
     try {
       await signInWithEmailAndPassword(auth, email, password);
+      const user = auth.currentUser;
+      
+      // 🔥 Run the merge before loading the app
+      if (user) await syncLocalWithCloud(user.uid); 
+      
       Keyboard.dismiss();
       setAppMode('cloud_app');
       await loadData('cloud_app'); 
@@ -216,6 +260,11 @@ export default function App() {
     setIsLoading(true);
     try {
       await createUserWithEmailAndPassword(auth, email, password);
+      const user = auth.currentUser;
+      
+      // 🔥 Push local data up to the brand new account
+      if (user) await syncLocalWithCloud(user.uid);
+
       Keyboard.dismiss();
       setAppMode('cloud_app');
       setWorkouts([]); 
@@ -271,10 +320,19 @@ export default function App() {
   const handleAddCustomExercise = async () => {
     const trimmedName = newCustomExercise.trim();
     if (trimmedName === '') return;
-    if (exerciseList.find(e => e.name.toLowerCase() === trimmedName.toLowerCase())) return;
+    if (exerciseList.find(e => e.name.toLowerCase() === trimmedName.toLowerCase())) {
+      Alert.alert("Already exists", "This exercise is already in your list!");
+      return;
+    }
     
     const updatedList = [{ name: trimmedName, met: newExerciseIntensity }, ...exerciseList];
     setExerciseList(updatedList); 
+    
+    // 🔥 AUTO-SELECT AND CLOSE EVERYTHING
+    handleParamChange(setExercise, trimmedName);
+    setIsAddCustomVisible(false);
+    setIsDropdownVisible(false);
+    
     setNewCustomExercise(''); 
     setNewExerciseIntensity(5.0); 
     Keyboard.dismiss();
@@ -559,25 +617,36 @@ export default function App() {
           />
         </View>
 
+        {/* ========================================== */}
+        {/* 🏋️ EXERCISE SELECTION MODAL                */}
+        {/* ========================================== */}
         {isDropdownVisible && (
         <Modal visible={isDropdownVisible} transparent={true} animationType="fade">
           <View style={styles.modalBackground}>
             <View style={[styles.modalContent, { height: '85%' }]}>
+              
               <View style={styles.modalHeader}>
                 <Text style={styles.modalTitle}>{t.chooseExercise}</Text>
-                <TouchableOpacity onPress={() => setIsDropdownVisible(false)}><Ionicons name="close-circle" size={28} color="#8D99AE" /></TouchableOpacity>
+                <TouchableOpacity onPress={() => setIsDropdownVisible(false)}>
+                  <Ionicons name="close-circle" size={28} color="#8D99AE" />
+                </TouchableOpacity>
               </View>
 
-              <View style={styles.customExerciseCard}>
-                <TextInput style={styles.customExerciseInput} placeholder={t.typeNew || "Type new exercise..."} placeholderTextColor="#A0AABF" value={newCustomExercise} onChangeText={setNewCustomExercise} />
-                <View style={{flexDirection: 'row', alignItems: 'center', marginTop: 10, gap: 8}}>
-                  <Text style={{fontSize: 12, fontWeight: '700', color: '#8D99AE'}}>{t.intensity}</Text>
-                  <TouchableOpacity style={[styles.intensityBtn, newExerciseIntensity === 3.0 && styles.intensityBtnActive]} onPress={() => setNewExerciseIntensity(3.0)}><Text style={[styles.intensityBtnText, newExerciseIntensity === 3.0 && styles.intensityBtnTextActive]}>{t.light}</Text></TouchableOpacity>
-                  <TouchableOpacity style={[styles.intensityBtn, newExerciseIntensity === 5.0 && styles.intensityBtnActive]} onPress={() => setNewExerciseIntensity(5.0)}><Text style={[styles.intensityBtnText, newExerciseIntensity === 5.0 && styles.intensityBtnTextActive]}>{t.moderate}</Text></TouchableOpacity>
-                  <TouchableOpacity style={[styles.intensityBtn, newExerciseIntensity === 8.0 && styles.intensityBtnActive]} onPress={() => setNewExerciseIntensity(8.0)}><Text style={[styles.intensityBtnText, newExerciseIntensity === 8.0 && styles.intensityBtnTextActive]}>{t.vigorous}</Text></TouchableOpacity>
-                </View>
-                <TouchableOpacity style={styles.customExerciseBtn} onPress={handleAddCustomExercise}><Text style={{color: '#FFF', fontWeight: '700'}}>{t.save}</Text><Ionicons name="add" size={20} color="#FFF" style={{marginLeft: 4}}/></TouchableOpacity>
-              </View>
+              {/* 🔥 THE NEW BUTTON THAT OPENS THE BUILDER */}
+              <TouchableOpacity 
+                style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#F0F4FF', padding: 16, borderRadius: 16, marginBottom: 16, borderWidth: 1, borderColor: '#DCE4FF', justifyContent: 'center' }}
+                onPress={() => {
+                  setIsDropdownVisible(false); // 1. Close the dropdown first
+                  setTimeout(() => {
+                    setIsAddCustomVisible(true); // 2. Open the builder after a tiny delay
+                  }, 150); // 150ms gives the phone enough time to clear the screen
+                }}
+              >
+                <Ionicons name="add-circle" size={24} color="#4361EE" style={{marginRight: 8}} />
+                <Text style={{color: '#4361EE', fontWeight: '700', fontSize: 16}}>
+                  {t.createNewExercise || "Create New Exercise"}
+                </Text>
+              </TouchableOpacity>
 
               <FlatList
                 data={exerciseList} style={{ flex: 1 }} keyExtractor={(item) => item.name} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={true}
@@ -592,6 +661,82 @@ export default function App() {
               />
             </View>
           </View>
+        </Modal>
+        )}
+
+        {/* ========================================== */}
+        {/* 🛠️ CREATE CUSTOM EXERCISE MODAL             */}
+        {/* ========================================== */}
+        {isAddCustomVisible && (
+        <Modal visible={isAddCustomVisible} transparent={true} animationType="slide">
+          {/* 🔥 NEW: Added KeyboardAvoidingView INSIDE the modal */}
+          <KeyboardAvoidingView 
+            style={{ flex: 1 }} 
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          >
+            <View style={styles.modalBackground}>
+              <View style={styles.modalContent}>
+                
+                <View style={styles.modalHeader}>
+                  <Text style={styles.modalTitle}>{t.createNewExercise || "Create New Exercise"}</Text>
+                  <TouchableOpacity onPress={() => setIsAddCustomVisible(false)}>
+                    <Ionicons name="close-circle" size={28} color="#8D99AE" />
+                  </TouchableOpacity>
+                </View>
+
+                <View style={[styles.customExerciseCard, { marginBottom: 0, borderWidth: 0, backgroundColor: 'transparent', padding: 0 }]}>
+                  <TextInput 
+                    style={styles.customExerciseInput} 
+                    placeholder={t.typeNew || "Type new exercise..."} 
+                    placeholderTextColor="#A0AABF" 
+                    value={newCustomExercise} 
+                    onChangeText={setNewCustomExercise} 
+                    autoFocus={true} 
+                  />
+                  
+                  <Text style={{fontSize: 12, fontWeight: '800', color: '#8D99AE', marginTop: 16, marginBottom: 8, letterSpacing: 1}}>
+                    {t.intensity || "INTENSITY"}
+                  </Text>
+                  
+                  <View style={{flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12}}>
+                    {[
+                      { label: t.intensityVeryLight || 'Very Light', val: 2.5 },
+                      { label: t.intensityLight || 'Light', val: 4.0 },
+                      { label: t.intensityModerate || 'Moderate', val: 5.0 },
+                      { label: t.intensityHard || 'Hard', val: 8.0 },
+                      { label: t.intensityMax || 'Max Effort', val: 12.0 }
+                    ].map((tier) => (
+                      <TouchableOpacity 
+                        key={tier.val}
+                        style={[styles.intensityBtn, newExerciseIntensity === tier.val && styles.intensityBtnActive]} 
+                        onPress={() => setNewExerciseIntensity(tier.val)}
+                      >
+                        <Text style={[styles.intensityBtnText, newExerciseIntensity === tier.val && styles.intensityBtnTextActive]}>
+                          {tier.label}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+
+                  <View style={{backgroundColor: '#F1F5F9', padding: 12, borderRadius: 10, marginBottom: 16, borderWidth: 1, borderColor: '#E2E8F0'}}>
+                    <Text style={{fontSize: 13, color: '#475569', fontStyle: 'italic', lineHeight: 20}}>
+                      {newExerciseIntensity === 2.5 && (t.ctxVeryLight || 'Like slow walking or stretching.')}
+                      {newExerciseIntensity === 4.0 && (t.ctxLight || 'Like a warmup or casual bike ride.')}
+                      {newExerciseIntensity === 5.0 && (t.ctxModerate || 'Like standard weightlifting or a brisk walk.')}
+                      {newExerciseIntensity === 8.0 && (t.ctxHard || 'Like heavy compound lifting or jogging.')}
+                      {newExerciseIntensity === 12.0 && (t.ctxMax || 'Like sprinting, bouldering, or HIIT.')}
+                    </Text>
+                  </View>
+
+                  <TouchableOpacity style={styles.customExerciseBtn} onPress={handleAddCustomExercise}>
+                    <Text style={{color: '#FFF', fontWeight: '700'}}>{t.save || "Save"}</Text>
+                    <Ionicons name="checkmark-circle" size={20} color="#FFF" style={{marginLeft: 4}}/>
+                  </TouchableOpacity>
+                </View>
+
+              </View>
+            </View>
+          </KeyboardAvoidingView>
         </Modal>
         )}
 
@@ -738,9 +883,23 @@ export default function App() {
                           </View>
                         </>
                       ) : (
-                        <TouchableOpacity style={styles.settingsRow} onPress={() => { setIsSettingsVisible(false); setAppMode('gatekeeper'); setWorkouts([]); setExerciseList(DEFAULT_EXERCISES); }}>
-                          <View style={{flexDirection: 'row', alignItems: 'center'}}><Ionicons name="log-in-outline" size={24} color="#4361EE" style={{marginRight: 12}} /><Text style={styles.settingsRowText}>{t.exitOffline}</Text></View>
-                        </TouchableOpacity>
+                        <>
+                          {/* 🔥 NEW: Offline Sync Button 🔥 */}
+                          <View style={styles.dangerZone}>
+                            <Text style={styles.dangerZoneTitle}>CLOUD SYNC</Text>
+                            <TouchableOpacity 
+                              style={[styles.authPrimaryBtn, {marginBottom: 10}]} 
+                              onPress={() => { setIsSettingsVisible(false); setAppMode('login_form'); }}
+                            >
+                              <Ionicons name="cloud-upload-outline" size={20} color="#FFF" style={{marginRight: 8}} />
+                              <Text style={styles.authPrimaryBtnText}>{t.loginToSync || "Login & Sync Data"}</Text>
+                            </TouchableOpacity>
+                          </View>
+
+                          <TouchableOpacity style={styles.settingsRow} onPress={() => { setIsSettingsVisible(false); setAppMode('gatekeeper'); setWorkouts([]); setExerciseList(DEFAULT_EXERCISES); }}>
+                            <View style={{flexDirection: 'row', alignItems: 'center'}}><Ionicons name="log-out-outline" size={24} color="#64748B" style={{marginRight: 12}} /><Text style={styles.settingsRowText}>{t.exitOffline || "Sign Out"}</Text></View>
+                          </TouchableOpacity>
+                        </>
                       )}
                     </ScrollView>
 
@@ -756,6 +915,9 @@ export default function App() {
           onClose={() => setIsSocialVisible(false)} 
           t={t} 
           friendCode={friendCode}
+          myWorkouts={workouts}             
+          myDisplayName={displayName}       
+          appMode={appMode} // 🔥 NEW
         />
       </View>
     </KeyboardAvoidingView>
