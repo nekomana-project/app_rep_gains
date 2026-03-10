@@ -141,6 +141,10 @@ export default function App() {
     
   }, [exercise, sets, reps, measurementValue, trackType, timeUnit, exerciseList, userWeight, userWeightUnit, isCaloriesOverridden]);
 
+  // Helper to get the correct key
+  const getStorageKey = (base: string) => {
+    return appMode === 'cloud_app' ? `@cloud_cache${base}` : `@guest${base}`;
+  };
 
   const loadData = async (targetMode?: string) => {
     try {
@@ -151,17 +155,20 @@ export default function App() {
         const docSnap = await getDoc(doc(db, 'users', user.uid));
         if (docSnap.exists()) {
           const data = docSnap.data();
-          
           const cloudWorkouts = data.workouts || [];
           setWorkouts(cloudWorkouts);
           
+          // Save to CLOUD CACHE key
+          await AsyncStorage.setItem('@cloud_cache_workouts', JSON.stringify(cloudWorkouts));
+          
+          // 🔥 FIXED: Isolated the exercise check so it doesn't accidentally overwrite
           let cloudExercises = DEFAULT_EXERCISES;
           if (data.exercises) {
             cloudExercises = data.exercises.map((e: any) => typeof e === 'string' ? { name: e, met: 5.0 } : e);
           }
           setExerciseList(cloudExercises);
 
-          // 🔥 FIXED: Overwrite local storage with the exact cloud truth so ghosts don't sync
+          // 🔥 FIXED: Keep local storage perfectly synced with the cloud
           await AsyncStorage.setItem('@gym_workouts', JSON.stringify(cloudWorkouts));
           await AsyncStorage.setItem('@custom_exercises', JSON.stringify(cloudExercises));
 
@@ -170,17 +177,28 @@ export default function App() {
           if (data.friendCode) setFriendCode(data.friendCode);
           if (data.shareWeight !== undefined) setShareWeight(data.shareWeight);
 
-          if (data.userWeight) {
-            setUserWeight(data.userWeight);
-            if (data.userWeightUnit) setUserWeightUnit(data.userWeightUnit);
+          // 🔥 FIXED: Check if ANY profile data exists to bypass onboarding, not just userWeight!
+          if (data.friendCode || data.displayName || data.userWeight) {
+            if (data.userWeight) {
+              setUserWeight(data.userWeight);
+              await AsyncStorage.setItem('@user_weight', data.userWeight);
+            }
+            if (data.userWeightUnit) {
+              setUserWeightUnit(data.userWeightUnit);
+              await AsyncStorage.setItem('@user_weight_unit', data.userWeightUnit);
+            }
             setShowOnboarding(false);
           } else {
             setShowOnboarding(true);
           }
+        } else {
+          setShowOnboarding(true);
         }
       } else {
-        const savedWorkouts = await AsyncStorage.getItem('@gym_workouts');
+        
+        const savedWorkouts = await AsyncStorage.getItem('@guest_workouts');
         if (savedWorkouts) setWorkouts(JSON.parse(savedWorkouts));
+        else setWorkouts([]);
 
         const savedExercises = await AsyncStorage.getItem('@custom_exercises');
         if (savedExercises) setExerciseList(JSON.parse(savedExercises).map((e: any) => typeof e === 'string' ? { name: e, met: 5.0 } : e));
@@ -189,7 +207,8 @@ export default function App() {
         const savedWeight = await AsyncStorage.getItem('@user_weight');
         const savedUnit = await AsyncStorage.getItem('@user_weight_unit');
         
-        if (savedWeight) {
+        // 🔥 FIXED: Check strictly against null so blank weights don't trigger onboarding
+        if (savedWeight !== null) {
           setUserWeight(savedWeight);
           if (savedUnit === 'lbs' || savedUnit === 'kg') setUserWeightUnit(savedUnit);
           setShowOnboarding(false);
@@ -207,16 +226,17 @@ export default function App() {
   const saveProfileData = async (weight: string, unit: 'lbs'|'kg', name: string, isShared: boolean, code: string) => {
     try {
       const user = auth.currentUser;
+      
+      // 🔥 ALWAYS save locally so offline ghosts don't appear
+      await AsyncStorage.setItem('@user_weight', weight);
+      await AsyncStorage.setItem('@user_weight_unit', unit);
+
       if (user && appMode === 'cloud_app') {
-        // If they don't have a code yet, generate one and save it forever
         const finalCode = code || generateFriendCode();
         setFriendCode(finalCode);
         await setDoc(doc(db, 'users', user.uid), { 
           userWeight: weight, userWeightUnit: unit, displayName: name, shareWeight: isShared, friendCode: finalCode 
         }, { merge: true });
-      } else {
-        await AsyncStorage.setItem('@user_weight', weight);
-        await AsyncStorage.setItem('@user_weight_unit', unit);
       }
     } catch (err) { console.error(err); }
   }
@@ -224,13 +244,14 @@ export default function App() {
   const saveWorkouts = async (updatedWorkoutsArray: Workout[]) => {
     try { 
       const user = auth.currentUser;
-      // If online, save to cloud
       if (user && appMode === 'cloud_app') {
         await setDoc(doc(db, 'users', user.uid), { workouts: updatedWorkoutsArray }, { merge: true });
+        await AsyncStorage.setItem('@cloud_cache_workouts', JSON.stringify(updatedWorkoutsArray)); 
+      } else {
+        // Save specifically to Guest storage
+        await AsyncStorage.setItem('@guest_workouts', JSON.stringify(updatedWorkoutsArray)); 
       }
-      // 🔥 FIXED: ALWAYS save locally too, so offline storage perfectly mirrors the cloud
-      await AsyncStorage.setItem('@gym_workouts', JSON.stringify(updatedWorkoutsArray)); 
-    } catch (error) { console.error("Error saving data:", error); }
+    } catch (error) { console.error("Error saving:", error); }
   };
 
   const saveExercises = async (updatedList: ExerciseDef[]) => {
@@ -281,39 +302,44 @@ export default function App() {
     } catch (e) { console.error("Sync error:", e); }
   };
 
-  const handleLogin = async () => {
-    setIsLoading(true);
-    try {
-      await signInWithEmailAndPassword(auth, email, password);
-      const user = auth.currentUser;
-      
-      // 🔥 Run the merge before loading the app
-      if (user) await syncLocalWithCloud(user.uid); 
-      
-      Keyboard.dismiss();
-      setAppMode('cloud_app');
-      await loadData('cloud_app'); 
-    } catch (error: any) { Alert.alert(t.errorTitle, t[error.code as keyof typeof t] || error.message); } 
-    finally { setIsLoading(false); }
-  };
+  // app/index.tsx
 
-  const handleRegister = async () => {
-    setIsLoading(true);
-    try {
-      await createUserWithEmailAndPassword(auth, email, password);
-      const user = auth.currentUser;
-      
-      // 🔥 Push local data up to the brand new account
-      if (user) await syncLocalWithCloud(user.uid);
+const handleLogin = async () => {
+  setIsLoading(true);
+  try {
+    await signInWithEmailAndPassword(auth, email, password);
+    const user = auth.currentUser;
+    
+    // ❌ REMOVED: if (user) await syncLocalWithCloud(user.uid); 
+    
+    Keyboard.dismiss();
+    setAppMode('cloud_app');
+    await loadData('cloud_app'); 
+  } catch (error: any) { 
+    Alert.alert(t.errorTitle, t[error.code as keyof typeof t] || error.message); 
+  } finally { 
+    setIsLoading(false); 
+  }
+};
 
-      Keyboard.dismiss();
-      setAppMode('cloud_app');
-      setWorkouts([]); 
-      saveWorkouts([]); 
-      setShowOnboarding(true); 
-    } catch (error: any) { Alert.alert('Registration Error', error.message); } 
-    finally { setIsLoading(false); }
-  };
+const handleRegister = async () => {
+  setIsLoading(true);
+  try {
+    await createUserWithEmailAndPassword(auth, email, password);
+    
+    // ❌ REMOVED: if (user) await syncLocalWithCloud(user.uid);
+
+    Keyboard.dismiss();
+    setAppMode('cloud_app');
+    setWorkouts([]); // Start fresh for new account
+    saveWorkouts([]); 
+    setShowOnboarding(true); 
+  } catch (error: any) { 
+    Alert.alert('Registration Error', error.message); 
+  } finally { 
+    setIsLoading(false); 
+  }
+};
 
   const handleLogout = async () => {
     try { await signOut(auth); setAppMode('gatekeeper'); setEmail(''); setPassword(''); setWorkouts([]); setExerciseList(DEFAULT_EXERCISES); setUserWeight('');
