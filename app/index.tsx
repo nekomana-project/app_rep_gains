@@ -12,9 +12,9 @@ import { Calendar } from 'react-native-calendars';
 import { BarChart } from 'react-native-chart-kit'; // 🔥 NEW IMPORT
 import { auth, db } from '../firebaseConfig';
 
-import { styles } from '../app/styles';
-import { TRANSLATIONS } from '../app/translations';
-import { DEFAULT_EXERCISES, ExerciseDef, Workout } from '../app/types';
+import { styles } from '../constants/styles';
+import { TRANSLATIONS } from '../constants/translations';
+import { DEFAULT_EXERCISES, ExerciseDef, Workout } from '../constants/types';
 
 const getLocalToday = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 const generateFriendCode = () => {
@@ -94,6 +94,8 @@ export default function App() {
     if (isCaloriesOverridden) return; 
     
     const weightKg = userWeightUnit === 'lbs' ? Number(userWeight) * 0.453592 : Number(userWeight);
+    
+    // If they haven't picked an exercise or set their weight yet, keep it completely empty
     if (!weightKg || !exercise) {
       setManualCalories('');
       return;
@@ -109,13 +111,18 @@ export default function App() {
       else if (timeUnit === 'min') timeInHours = (Number(measurementValue) || 0) / 60;
       else if (timeUnit === 'hr') timeInHours = Number(measurementValue) || 0;
     } else {
-      const s = Number(sets) || 1;
-      const r = Number(reps) || 1;
+      // Changed the fallback to 0 instead of 1. 
+      const s = Number(sets) || 0;
+      const r = Number(reps) || 0;
       timeInHours = (s * r * 4) / 3600;
     }
 
-    const calcCals = Math.round(met * weightKg * timeInHours);
-    setManualCalories(calcCals > 0 ? calcCals.toString() : '');
+    // 🔥 FIXED: Use Math.ceil so even 0.4 calories rounds up to 1!
+    const calcCals = Math.ceil(met * weightKg * timeInHours);
+    
+    // 🔥 FIXED: Show the number even if it calculates to 0, so the user knows it's working!
+    setManualCalories(calcCals >= 0 ? calcCals.toString() : '');
+    
   }, [exercise, sets, reps, measurementValue, trackType, timeUnit, exerciseList, userWeight, userWeightUnit, isCaloriesOverridden]);
 
 
@@ -492,14 +499,18 @@ export default function App() {
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined} enabled={Platform.OS !== 'web'}>
       <View style={styles.container}>
       
-        <View style={{flexDirection: 'row', gap: 15}}>
-            <TouchableOpacity onPress={() => setIsSocialVisible(true)} style={{padding: 4}}>
-              <Ionicons name="people-outline" size={28} color="#1E293B" />
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => setIsSettingsVisible(true)} style={{padding: 4}}>
-              <Ionicons name="settings-outline" size={28} color="#1E293B" />
-            </TouchableOpacity>
+        {/* 🔥 RESTORED HEADER (Icons moved down to the toolbar) */}
+        <View style={styles.headerContainer}>
+          <View>
+            <Text style={styles.headerTitle}>{t.appTitle || "Rep & Gains"}</Text>
+            {appMode === 'cloud_app' && (
+              <View style={{flexDirection: 'row', alignItems: 'center', marginTop: 4}}>
+                <Ionicons name="cloud-done" size={12} color="#10B981" />
+                <Text style={{fontSize: 12, color: '#10B981', marginLeft: 4, fontWeight: '600'}}>Synced to Cloud</Text>
+              </View>
+            )}
           </View>
+        </View>
 
         {isFormVisible && (
           <DismissKeyboardView>
@@ -573,23 +584,31 @@ export default function App() {
           <View style={styles.listHeaderRow}>
             <Text style={styles.sectionTitle}>{t.history}</Text>
             
-            {/* 🔥 ADDED STATS BUTTON NEXT TO CALENDAR 🔥 */}
-            <View style={{flexDirection: 'row', gap: 10}}>
+            {/* 🔥 NEW UNIFIED TOOLBAR 🔥 */}
+            <View style={{flexDirection: 'row', gap: 8, alignItems: 'center'}}>
               {!isFormVisible && (
-                <TouchableOpacity style={styles.calendarOverviewBtn} onPress={() => setIsChartVisible(true)}>
-                  <Ionicons name="stats-chart" size={20} color="#4361EE" />
-                </TouchableOpacity>
-              )}
-              {!isFormVisible && (
-                <TouchableOpacity style={[styles.calendarOverviewBtn, filterDate && {backgroundColor: '#4361EE'}]} onPress={() => setIsCalendarOverviewVisible(true)}>
-                  <Ionicons name="calendar" size={20} color={filterDate ? "#FFF" : "#4361EE"} />
-                </TouchableOpacity>
-              )}
-              {!isFormVisible && (
-                <TouchableOpacity style={styles.addButton} onPress={() => setIsFormVisible(true)}>
-                  <Ionicons name="add" size={20} color="#FFF" />
-                  <Text style={styles.addButtonText}>{t.logWorkout}</Text>
-                </TouchableOpacity>
+                <>
+                  <TouchableOpacity style={styles.calendarOverviewBtn} onPress={() => setIsSocialVisible(true)}>
+                    <Ionicons name="people" size={20} color="#4361EE" />
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity style={styles.calendarOverviewBtn} onPress={() => setIsChartVisible(true)}>
+                    <Ionicons name="stats-chart" size={20} color="#4361EE" />
+                  </TouchableOpacity>
+
+                  <TouchableOpacity style={[styles.calendarOverviewBtn, filterDate && {backgroundColor: '#4361EE'}]} onPress={() => setIsCalendarOverviewVisible(true)}>
+                    <Ionicons name="calendar" size={20} color={filterDate ? "#FFF" : "#4361EE"} />
+                  </TouchableOpacity>
+
+                  <TouchableOpacity style={styles.calendarOverviewBtn} onPress={() => setIsSettingsVisible(true)}>
+                    <Ionicons name="settings" size={20} color="#4361EE" />
+                  </TouchableOpacity>
+
+                  {/* Add Button - Removed text, made it a sleek square icon */}
+                  <TouchableOpacity style={[styles.addButton, { paddingHorizontal: 12, paddingVertical: 10 }]} onPress={() => setIsFormVisible(true)}>
+                    <Ionicons name="add" size={22} color="#FFF" />
+                  </TouchableOpacity>
+                </>
               )}
             </View>
           </View>

@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Text, TouchableOpacity, View } from 'react-native';
-import { styles } from '../app/styles'; // Assuming you extracted styles earlier
-import { Workout } from '../app/types';
+import { styles } from '../constants/styles'; // Assuming you extracted styles earlier
+import { Workout } from '../constants/types';
 
 interface WorkoutCardProps {
   item: Workout;

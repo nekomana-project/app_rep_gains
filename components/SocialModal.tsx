@@ -2,8 +2,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { arrayRemove, arrayUnion, collection, doc, getDoc, getDocs, onSnapshot, query, updateDoc, where } from 'firebase/firestore';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Modal, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { styles } from '../app/styles';
-import { Workout } from '../app/types';
+import { styles } from '../constants/styles';
+import { Workout } from '../constants/types';
 import { auth, db } from '../firebaseConfig';
 
 interface SocialModalProps {

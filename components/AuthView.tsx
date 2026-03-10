@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { ActivityIndicator, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { styles } from '../app/styles';
+import { styles } from '../constants/styles';
 
 // We pass in all the state and functions this view needs
 interface AuthViewProps {
