@@ -552,41 +552,63 @@ const handleRegister = async () => {
         <View style={styles.authContainer}>
           <View style={styles.authLogoBox}>
             <Ionicons name="body-outline" size={80} color="#4361EE" />
-            <Text style={styles.authTitleText}>{t.onboardingTitle}</Text>
-            <Text style={{color: '#8D99AE', marginTop: 10, textAlign: 'center', lineHeight: 22}}>{t.onboardingSub}</Text>
+            <Text style={styles.authTitleText}>{t.onboardingTitle || "Welcome!"}</Text>
+            <Text style={{color: '#8D99AE', marginTop: 10, textAlign: 'center', lineHeight: 22}}>
+              {t.onboardingSub || "Let's set up your profile for accurate calorie tracking."}
+            </Text>
           </View>
-          <View style={styles.authFormBox}>
-            {appMode === 'cloud_app' && (
-              <>
-                <Text style={styles.inputLabel}>{t.displayName}</Text>
-                <TextInput style={styles.authInput} placeholder="NekoBoi" value={displayName} onChangeText={setDisplayName} maxLength={15} />
-              </>
-            )}
-            
-            <Text style={styles.inputLabel}>{t.sex || "Biological Sex"}</Text>
-            <View style={{flexDirection: 'row', gap: 10, marginBottom: 20}}>
-              <View style={[styles.unitToggleContainerCompact, {flex: 1}]}>
-                <TouchableOpacity style={[styles.unitOptionCompact, userSex === 'male' && styles.unitOptionActive]} onPress={() => setUserSex('male')}>
+          
+          <View style={[styles.authFormBox, { flex: 1, paddingBottom: 20 }]}>
+            {/* 🔥 NEW: Added ScrollView so small phones can scroll through the new inputs */}
+            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+              
+              {appMode === 'cloud_app' && (
+                <>
+                  <Text style={styles.inputLabel}>{t.displayName || "Display Name"}</Text>
+                  <TextInput style={styles.authInput} placeholder="NekoBoi" value={displayName} onChangeText={setDisplayName} maxLength={15} />
+                </>
+              )}
+              
+              <Text style={styles.inputLabel}>{t.bodyweight || "Bodyweight"}</Text>
+              <View style={{flexDirection: 'row', gap: 5, alignItems: 'center', marginBottom: 15}}>
+                <TextInput style={[styles.authInput, {flex: 1, marginBottom: 0}]} placeholder="0" keyboardType="numeric" value={userWeight} onChangeText={setUserWeight} />
+                <View style={styles.unitToggleContainerCompact}>
+                  <TouchableOpacity style={[styles.unitOptionCompact, userWeightUnit === 'kg' && styles.unitOptionActive, {paddingHorizontal: 12}]} onPress={() => setUserWeightUnit('kg')}><Text style={[styles.unitOptionText, userWeightUnit === 'kg' && styles.unitOptionTextActive]}>kg</Text></TouchableOpacity>
+                  <TouchableOpacity style={[styles.unitOptionCompact, userWeightUnit === 'lbs' && styles.unitOptionActive, {paddingHorizontal: 12}]} onPress={() => setUserWeightUnit('lbs')}><Text style={[styles.unitOptionText, userWeightUnit === 'lbs' && styles.unitOptionTextActive]}>lbs</Text></TouchableOpacity>
+                </View>
+              </View>
+
+              <Text style={styles.inputLabel}>{t.height || "Height"}</Text>
+              <View style={{flexDirection: 'row', gap: 5, alignItems: 'center', marginBottom: 15}}>
+                <TextInput style={[styles.authInput, {flex: 1, marginBottom: 0}]} placeholder="0" keyboardType="numeric" value={userHeight} onChangeText={setUserHeight} />
+                <View style={styles.unitToggleContainerCompact}>
+                  <TouchableOpacity style={[styles.unitOptionCompact, userHeightUnit === 'cm' && styles.unitOptionActive, {paddingHorizontal: 12}]} onPress={() => setUserHeightUnit('cm')}><Text style={[styles.unitOptionText, userHeightUnit === 'cm' && styles.unitOptionTextActive]}>cm</Text></TouchableOpacity>
+                  <TouchableOpacity style={[styles.unitOptionCompact, userHeightUnit === 'in' && styles.unitOptionActive, {paddingHorizontal: 12}]} onPress={() => setUserHeightUnit('in')}><Text style={[styles.unitOptionText, userHeightUnit === 'in' && styles.unitOptionTextActive]}>in</Text></TouchableOpacity>
+                </View>
+              </View>
+
+              <Text style={styles.inputLabel}>{t.age || "Age"}</Text>
+              <TextInput style={[styles.authInput, {marginBottom: 15}]} placeholder="25" keyboardType="numeric" value={userAge} onChangeText={setUserAge} />
+
+              <Text style={styles.inputLabel}>{t.sex || "Biological Sex"}</Text>
+              <View style={[styles.unitToggleContainerCompact, {height: 48, marginBottom: 25}]}>
+                <TouchableOpacity style={[styles.unitOptionCompact, {flex: 1}, userSex === 'male' && styles.unitOptionActive]} onPress={() => setUserSex('male')}>
+                  <Ionicons name="male-outline" size={18} color={userSex === 'male' ? '#FFF' : '#64748B'} style={{marginRight: 6}} />
                   <Text style={[styles.unitOptionText, userSex === 'male' && styles.unitOptionTextActive]}>{t.male || "Male"}</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={[styles.unitOptionCompact, userSex === 'female' && styles.unitOptionActive]} onPress={() => setUserSex('female')}>
+                <TouchableOpacity style={[styles.unitOptionCompact, {flex: 1}, userSex === 'female' && styles.unitOptionActive]} onPress={() => setUserSex('female')}>
+                  <Ionicons name="female-outline" size={18} color={userSex === 'female' ? '#FFF' : '#64748B'} style={{marginRight: 6}} />
                   <Text style={[styles.unitOptionText, userSex === 'female' && styles.unitOptionTextActive]}>{t.female || "Female"}</Text>
                 </TouchableOpacity>
               </View>
-            </View>
-            
-            <Text style={styles.inputLabel}>{t.bodyweight}</Text>
-            <View style={{flexDirection: 'row', gap: 10, marginBottom: 20}}>
-              <TextInput style={[styles.authInput, {flex: 1, marginBottom: 0}]} placeholder="0" keyboardType="numeric" value={userWeight} onChangeText={setUserWeight} />
-              <View style={styles.unitToggleContainerCompact}>
-                <TouchableOpacity style={[styles.unitOptionCompact, userWeightUnit === 'kg' && styles.unitOptionActive]} onPress={() => setUserWeightUnit('kg')}><Text style={[styles.unitOptionText, userWeightUnit === 'kg' && styles.unitOptionTextActive]}>kg</Text></TouchableOpacity>
-                <TouchableOpacity style={[styles.unitOptionCompact, userWeightUnit === 'lbs' && styles.unitOptionActive]} onPress={() => setUserWeightUnit('lbs')}><Text style={[styles.unitOptionText, userWeightUnit === 'lbs' && styles.unitOptionTextActive]}>lbs</Text></TouchableOpacity>
-              </View>
-            </View>
-            <TouchableOpacity style={styles.authPrimaryBtn} onPress={() => { saveProfileData(userWeight, userWeightUnit, displayName, shareWeight, friendCode, userSex); setShowOnboarding(false); Keyboard.dismiss(); }}>
-              <Text style={styles.authPrimaryBtnText}>{t.continueBtn}</Text>
-              <Ionicons name="arrow-forward" size={20} color="#FFF" style={{marginLeft: 8}}/>
-            </TouchableOpacity>
+
+              {/* 🔥 Updated to pass all 9 arguments! */}
+              <TouchableOpacity style={styles.authPrimaryBtn} onPress={() => { saveProfileData(userWeight, userWeightUnit, userHeight, userHeightUnit, userAge, displayName, shareWeight, friendCode, userSex); setShowOnboarding(false); Keyboard.dismiss(); }}>
+                <Text style={styles.authPrimaryBtnText}>{t.continueBtn || "Continue"}</Text>
+                <Ionicons name="arrow-forward" size={20} color="#FFF" style={{marginLeft: 8}}/>
+              </TouchableOpacity>
+              
+            </ScrollView>
           </View>
         </View>
       </DismissKeyboardView>
@@ -972,49 +994,44 @@ const handleRegister = async () => {
                             </>
                           )}
 
-                          {/* STATS GRID */}
-                          <View style={{flexDirection: 'row', gap: 10}}>
-                            <View style={{flex: 1}}>
-                              <Text style={styles.inputLabel}>{t.bodyweight}</Text>
-                              <View style={{flexDirection: 'row', gap: 5, alignItems: 'center', marginBottom: 15}}>
-                                <TextInput style={[styles.input, {flex: 1, marginBottom: 0}]} keyboardType="numeric" value={userWeight} onChangeText={setUserWeight} />
-                                <View style={styles.unitToggleContainerCompact}>
-                                  <TouchableOpacity style={[styles.unitOptionCompact, userWeightUnit === 'kg' && styles.unitOptionActive, {paddingHorizontal: 8}]} onPress={() => setUserWeightUnit('kg')}><Text style={[styles.unitOptionText, userWeightUnit === 'kg' && styles.unitOptionTextActive]}>kg</Text></TouchableOpacity>
-                                  <TouchableOpacity style={[styles.unitOptionCompact, userWeightUnit === 'lbs' && styles.unitOptionActive, {paddingHorizontal: 8}]} onPress={() => setUserWeightUnit('lbs')}><Text style={[styles.unitOptionText, userWeightUnit === 'lbs' && styles.unitOptionTextActive]}>lbs</Text></TouchableOpacity>
-                                </View>
+                          {/* 🔥 VERTICALLY STACKED STATS */}
+                          <View>
+                            {/* Bodyweight */}
+                            <Text style={styles.inputLabel}>{t.bodyweight}</Text>
+                            <View style={{flexDirection: 'row', gap: 5, alignItems: 'center', marginBottom: 15}}>
+                              <TextInput style={[styles.input, {flex: 1, marginBottom: 0}]} keyboardType="numeric" value={userWeight} onChangeText={setUserWeight} />
+                              <View style={styles.unitToggleContainerCompact}>
+                                <TouchableOpacity style={[styles.unitOptionCompact, userWeightUnit === 'kg' && styles.unitOptionActive, {paddingHorizontal: 12}]} onPress={() => setUserWeightUnit('kg')}><Text style={[styles.unitOptionText, userWeightUnit === 'kg' && styles.unitOptionTextActive]}>kg</Text></TouchableOpacity>
+                                <TouchableOpacity style={[styles.unitOptionCompact, userWeightUnit === 'lbs' && styles.unitOptionActive, {paddingHorizontal: 12}]} onPress={() => setUserWeightUnit('lbs')}><Text style={[styles.unitOptionText, userWeightUnit === 'lbs' && styles.unitOptionTextActive]}>lbs</Text></TouchableOpacity>
                               </View>
                             </View>
 
-                            <View style={{flex: 1}}>
-                              <Text style={styles.inputLabel}>{t.height || "Height"}</Text>
-                              <View style={{flexDirection: 'row', gap: 5, alignItems: 'center', marginBottom: 15}}>
-                                <TextInput style={[styles.input, {flex: 1, marginBottom: 0}]} keyboardType="numeric" value={userHeight} onChangeText={setUserHeight} />
-                                <View style={styles.unitToggleContainerCompact}>
-                                  <TouchableOpacity style={[styles.unitOptionCompact, userHeightUnit === 'cm' && styles.unitOptionActive, {paddingHorizontal: 8}]} onPress={() => setUserHeightUnit('cm')}><Text style={[styles.unitOptionText, userHeightUnit === 'cm' && styles.unitOptionTextActive]}>cm</Text></TouchableOpacity>
-                                  <TouchableOpacity style={[styles.unitOptionCompact, userHeightUnit === 'in' && styles.unitOptionActive, {paddingHorizontal: 8}]} onPress={() => setUserHeightUnit('in')}><Text style={[styles.unitOptionText, userHeightUnit === 'in' && styles.unitOptionTextActive]}>in</Text></TouchableOpacity>
-                                </View>
+                            {/* Height */}
+                            <Text style={styles.inputLabel}>{t.height || "Height"}</Text>
+                            <View style={{flexDirection: 'row', gap: 5, alignItems: 'center', marginBottom: 15}}>
+                              <TextInput style={[styles.input, {flex: 1, marginBottom: 0}]} keyboardType="numeric" value={userHeight} onChangeText={setUserHeight} />
+                              <View style={styles.unitToggleContainerCompact}>
+                                <TouchableOpacity style={[styles.unitOptionCompact, userHeightUnit === 'cm' && styles.unitOptionActive, {paddingHorizontal: 12}]} onPress={() => setUserHeightUnit('cm')}><Text style={[styles.unitOptionText, userHeightUnit === 'cm' && styles.unitOptionTextActive]}>cm</Text></TouchableOpacity>
+                                <TouchableOpacity style={[styles.unitOptionCompact, userHeightUnit === 'in' && styles.unitOptionActive, {paddingHorizontal: 12}]} onPress={() => setUserHeightUnit('in')}><Text style={[styles.unitOptionText, userHeightUnit === 'in' && styles.unitOptionTextActive]}>in</Text></TouchableOpacity>
                               </View>
                             </View>
-                          </View>
 
-                          <View style={{flexDirection: 'row', gap: 10}}>
-                            <View style={{flex: 1}}>
-                              <Text style={styles.inputLabel}>{t.age || "Age"}</Text>
-                              <TextInput style={[styles.input, {marginBottom: 15}]} keyboardType="numeric" value={userAge} onChangeText={setUserAge} placeholder="25" />
-                            </View>
+                            {/* Age */}
+                            <Text style={styles.inputLabel}>{t.age || "Age"}</Text>
+                            <TextInput style={[styles.input, {marginBottom: 15}]} keyboardType="numeric" value={userAge} onChangeText={setUserAge} placeholder="25" />
 
-                            <View style={{flex: 1.5}}>
-                              <Text style={styles.inputLabel}>{t.sex || "Biological Sex"}</Text>
-                              <View style={[styles.unitToggleContainerCompact, {height: 48}]}>
-                                <TouchableOpacity style={[styles.unitOptionCompact, userSex === 'male' && styles.unitOptionActive]} onPress={() => setUserSex('male')}>
-                                  <Ionicons name="male-outline" size={16} color={userSex === 'male' ? '#FFF' : '#64748B'} style={{marginRight: 4}} />
-                                  <Text style={[styles.unitOptionText, userSex === 'male' && styles.unitOptionTextActive]}>{t.male || "Male"}</Text>
-                                </TouchableOpacity>
-                                <TouchableOpacity style={[styles.unitOptionCompact, userSex === 'female' && styles.unitOptionActive]} onPress={() => setUserSex('female')}>
-                                  <Ionicons name="female-outline" size={16} color={userSex === 'female' ? '#FFF' : '#64748B'} style={{marginRight: 4}} />
-                                  <Text style={[styles.unitOptionText, userSex === 'female' && styles.unitOptionTextActive]}>{t.female || "Female"}</Text>
-                                </TouchableOpacity>
-                              </View>
+                            {/* Biological Sex */}
+                            <Text style={styles.inputLabel}>{t.sex || "Biological Sex"}</Text>
+                            <View style={[styles.unitToggleContainerCompact, {height: 48, marginBottom: 15}]}>
+                              {/* Added {flex: 1} to these buttons so they stretch evenly across the whole screen! */}
+                              <TouchableOpacity style={[styles.unitOptionCompact, {flex: 1}, userSex === 'male' && styles.unitOptionActive]} onPress={() => setUserSex('male')}>
+                                <Ionicons name="male-outline" size={18} color={userSex === 'male' ? '#FFF' : '#64748B'} style={{marginRight: 6}} />
+                                <Text style={[styles.unitOptionText, userSex === 'male' && styles.unitOptionTextActive]}>{t.male || "Male"}</Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity style={[styles.unitOptionCompact, {flex: 1}, userSex === 'female' && styles.unitOptionActive]} onPress={() => setUserSex('female')}>
+                                <Ionicons name="female-outline" size={18} color={userSex === 'female' ? '#FFF' : '#64748B'} style={{marginRight: 6}} />
+                                <Text style={[styles.unitOptionText, userSex === 'female' && styles.unitOptionTextActive]}>{t.female || "Female"}</Text>
+                              </TouchableOpacity>
                             </View>
                           </View>
 
@@ -1073,7 +1090,7 @@ const handleRegister = async () => {
             </TouchableWithoutFeedback>
           </Modal>
         )}
-        
+
         {/* 🔥 THE NEW SOCIAL MODAL 🔥 */}
         <SocialModal 
           isVisible={isSocialVisible} 
