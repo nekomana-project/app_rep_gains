@@ -21,6 +21,12 @@ export const TRANSLATIONS = {
         ctxHard: "Like heavy compound lifting or jogging.",
         ctxMax: "Like sprinting, bouldering, or HIIT.",
         createNewExercise: "Create New Exercise",
+        sex: "Biological Sex",
+        male: "Male",
+        female: "Female",
+        age: "Age",
+        height: "Height",        
+        appSettings: "App Settings",
     },
     nl: {
         appTitle: "Trainings Tracker", exercise: "OEFENING", date: "DATUM", selectPrompt: "Kies een oefening...", sets: "SETS", reps: "HERHALINGEN", trackBy: "BIJHOUDEN IN", weightOption: "Gewicht", timeOption: "Tijd", weightInput: "GEWICHT", timeInput: "DUUR", secOption: "Sec", minOption: "Min", hrOption: "Uren", cancel: "Annuleren", save: "Opslaan", update: "Aanpassen", history: "Geschiedenis", logWorkout: "Training Loggen", chooseExercise: "Kies Oefening", typeNew: "Nieuwe oefening...", deleteConfirmTitle: "Verwijder Training", deleteConfirmMsg: "Weet je zeker dat je dit wilt verwijderen?", deleteExerciseMsg: "Verwijder deze oefening uit de lijst?", calendarOverview: "Kalender Overzicht", close: "Sluiten", filteredTo: "Gefilterd op:",
@@ -44,6 +50,12 @@ export const TRANSLATIONS = {
         ctxHard: "Zoals zware compound lifts of joggen.",
         ctxMax: "Zoals sprinten, boulderen of HIIT.",
         createNewExercise: "Nieuwe Oefening Aanmaken",
+        sex: "Biologisch Geslacht",
+        male: "Man",
+        female: "Vrouw",
+        age: "Leeftijd",
+        height: "Lengte",    
+        appSettings: "App Instellingen",
     }
 };
 

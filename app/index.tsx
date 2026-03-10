@@ -40,6 +40,11 @@ export default function App() {
 
   const [userWeight, setUserWeight] = useState('');
   const [userWeightUnit, setUserWeightUnit] = useState<'lbs' | 'kg'>('kg');
+  const [userAge, setUserAge] = useState('');
+  const [userHeight, setUserHeight] = useState('');
+  const [userHeightUnit, setUserHeightUnit] = useState<'cm' | 'in'>('cm');
+  const [userSex, setUserSex] = useState<'male' | 'female'>('male'); 
+  const [settingsTab, setSettingsTab] = useState<'profile' | 'app'>('profile'); // 🔥 NEW: Settings Tabs
   const [showOnboarding, setShowOnboarding] = useState(false);
 
   // 🔥 NEW SOCIAL STATES
@@ -110,9 +115,10 @@ export default function App() {
     if (isCaloriesOverridden) return; 
     
     const weightKg = userWeightUnit === 'lbs' ? Number(userWeight) * 0.453592 : Number(userWeight);
+    const heightCm = userHeightUnit === 'in' ? Number(userHeight) * 2.54 : Number(userHeight);
+    const ageYears = Number(userAge);
     
-    // If they haven't picked an exercise or set their weight yet, keep it completely empty
-    if (!weightKg || !exercise) {
+    if (!weightKg || !heightCm || !ageYears || !exercise) {
       setManualCalories('');
       return;
     }
@@ -127,19 +133,22 @@ export default function App() {
       else if (timeUnit === 'min') timeInHours = (Number(measurementValue) || 0) / 60;
       else if (timeUnit === 'hr') timeInHours = Number(measurementValue) || 0;
     } else {
-      // Changed the fallback to 0 instead of 1. 
       const s = Number(sets) || 0;
       const r = Number(reps) || 0;
       timeInHours = (s * r * 4) / 3600;
     }
 
-    // 🔥 FIXED: Use Math.ceil so even 0.4 calories rounds up to 1!
-    const calcCals = Math.ceil(met * weightKg * timeInHours);
+    // 🔥 THE MIFFLIN-ST JEOR BMR FORMULA
+    let dailyBmr = (10 * weightKg) + (6.25 * heightCm) - (5 * ageYears);
+    dailyBmr = userSex === 'male' ? dailyBmr + 5 : dailyBmr - 161;
+
+    // Convert daily resting burn to hourly, then multiply by exercise intensity (MET)
+    const hourlyBmr = dailyBmr / 24;
+    const calcCals = Math.ceil(met * hourlyBmr * timeInHours);
     
-    // 🔥 FIXED: Show the number even if it calculates to 0, so the user knows it's working!
     setManualCalories(calcCals >= 0 ? calcCals.toString() : '');
     
-  }, [exercise, sets, reps, measurementValue, trackType, timeUnit, exerciseList, userWeight, userWeightUnit, isCaloriesOverridden]);
+  }, [exercise, sets, reps, measurementValue, trackType, timeUnit, exerciseList, userWeight, userWeightUnit, userHeight, userHeightUnit, userAge, userSex, isCaloriesOverridden]);
 
   // Helper to get the correct key
   const getStorageKey = (base: string) => {
@@ -155,21 +164,17 @@ export default function App() {
         const docSnap = await getDoc(doc(db, 'users', user.uid));
         if (docSnap.exists()) {
           const data = docSnap.data();
+          
           const cloudWorkouts = data.workouts || [];
           setWorkouts(cloudWorkouts);
           
-          // Save to CLOUD CACHE key
-          await AsyncStorage.setItem('@cloud_cache_workouts', JSON.stringify(cloudWorkouts));
-          
-          // 🔥 FIXED: Isolated the exercise check so it doesn't accidentally overwrite
           let cloudExercises = DEFAULT_EXERCISES;
           if (data.exercises) {
             cloudExercises = data.exercises.map((e: any) => typeof e === 'string' ? { name: e, met: 5.0 } : e);
           }
           setExerciseList(cloudExercises);
 
-          // 🔥 FIXED: Keep local storage perfectly synced with the cloud
-          // Save to CLOUD CACHE keys
+          // 🔥 Save to CLOUD CACHE keys so it doesn't mix with offline/guest data
           await AsyncStorage.setItem('@cloud_cache_workouts', JSON.stringify(cloudWorkouts));
           await AsyncStorage.setItem('@cloud_cache_exercises', JSON.stringify(cloudExercises));
 
@@ -178,66 +183,84 @@ export default function App() {
           if (data.friendCode) setFriendCode(data.friendCode);
           if (data.shareWeight !== undefined) setShareWeight(data.shareWeight);
 
-          // 🔥 FIXED: Check if ANY profile data exists to bypass onboarding, not just userWeight!
-          if (data.friendCode || data.displayName || data.userWeight) {
-            if (data.userWeight) {
-              setUserWeight(data.userWeight);
-              await AsyncStorage.setItem('@user_weight', data.userWeight);
-            }
-            if (data.userWeightUnit) {
-              setUserWeightUnit(data.userWeightUnit);
-              await AsyncStorage.setItem('@user_weight_unit', data.userWeightUnit);
-            }
+          // Load profile data (including the new userSex)
+          if (data.userWeight) {
+            setUserWeight(data.userWeight);
+            if (data.userWeightUnit) setUserWeightUnit(data.userWeightUnit);
+            if (data.userSex) setUserSex(data.userSex); // 🔥 Load userSex from Cloud
+            // Add to Cloud loading block:
+            if (data.userHeight) setUserHeight(data.userHeight);
+            if (data.userHeightUnit) setUserHeightUnit(data.userHeightUnit);
+            if (data.userAge) setUserAge(data.userAge);
             setShowOnboarding(false);
           } else {
             setShowOnboarding(true);
           }
-        } else {
-          setShowOnboarding(true);
         }
       } else {
-        
+        // 🔥 OFFLINE/GUEST MODE: Load specifically from @guest keys
         const savedWorkouts = await AsyncStorage.getItem('@guest_workouts');
         if (savedWorkouts) setWorkouts(JSON.parse(savedWorkouts));
-        else setWorkouts([]);
+        else setWorkouts([]); // Prevent ghosts by clearing if empty
 
-        // 🔥 FIX: Load from @guest_exercises, NOT @custom_exercises
         const savedExercises = await AsyncStorage.getItem('@guest_exercises');
-        if (savedExercises) setExerciseList(JSON.parse(savedExercises).map((e: any) => typeof e === 'string' ? { name: e, met: 5.0 } : e));
-        else setExerciseList(DEFAULT_EXERCISES);
-        
+        if (savedExercises) {
+          setExerciseList(JSON.parse(savedExercises).map((e: any) => typeof e === 'string' ? { name: e, met: 5.0 } : e));
+        } else {
+          setExerciseList(DEFAULT_EXERCISES);
+        }
+
         const savedWeight = await AsyncStorage.getItem('@user_weight');
         const savedUnit = await AsyncStorage.getItem('@user_weight_unit');
+        const savedSex = await AsyncStorage.getItem('@user_sex'); // 🔥 Load userSex from Local
         
-        // 🔥 FIXED: Check strictly against null so blank weights don't trigger onboarding
-        if (savedWeight !== null) {
+        if (savedWeight) {
           setUserWeight(savedWeight);
           if (savedUnit === 'lbs' || savedUnit === 'kg') setUserWeightUnit(savedUnit);
+          if (savedSex === 'male' || savedSex === 'female') setUserSex(savedSex);
+          // Add to Local/Offline loading block:
+          const savedHeight = await AsyncStorage.getItem('@user_height');
+          const savedHeightUnit = await AsyncStorage.getItem('@user_height_unit');
+          const savedAge = await AsyncStorage.getItem('@user_age');
+          if (savedHeight) setUserHeight(savedHeight);
+          if (savedHeightUnit === 'cm' || savedHeightUnit === 'in') setUserHeightUnit(savedHeightUnit);
+          if (savedAge) setUserAge(savedAge);
           setShowOnboarding(false);
         } else {
           setShowOnboarding(true);
         }
       }
 
+      // Load language preference (shared across both modes)
       const savedLang = await AsyncStorage.getItem('@app_language');
       if (savedLang === 'nl' || savedLang === 'en') setLang(savedLang);
-    } catch (error) { console.error("Error loading data:", error); } 
-    finally { setIsDataLoaded(true); }
+      
+    } catch (error) { 
+      console.error("Error loading data:", error); 
+    } finally { 
+      setIsDataLoaded(true); 
+    }
   };
 
-  const saveProfileData = async (weight: string, unit: 'lbs'|'kg', name: string, isShared: boolean, code: string) => {
+  const saveProfileData = async (weight: string, weightUnit: 'lbs'|'kg', height: string, heightUnit: 'cm'|'in', age: string, name: string, isShared: boolean, code: string, sex: 'male'|'female') => {
     try {
       const user = auth.currentUser;
       
-      // 🔥 ALWAYS save locally so offline ghosts don't appear
       await AsyncStorage.setItem('@user_weight', weight);
-      await AsyncStorage.setItem('@user_weight_unit', unit);
+      await AsyncStorage.setItem('@user_weight_unit', weightUnit);
+      await AsyncStorage.setItem('@user_height', height);
+      await AsyncStorage.setItem('@user_height_unit', heightUnit);
+      await AsyncStorage.setItem('@user_age', age);
+      await AsyncStorage.setItem('@user_sex', sex);
 
       if (user && appMode === 'cloud_app') {
         const finalCode = code || generateFriendCode();
         setFriendCode(finalCode);
         await setDoc(doc(db, 'users', user.uid), { 
-          userWeight: weight, userWeightUnit: unit, displayName: name, shareWeight: isShared, friendCode: finalCode 
+          userWeight: weight, userWeightUnit: weightUnit, 
+          userHeight: height, userHeightUnit: heightUnit,
+          userAge: age, userSex: sex,
+          displayName: name, shareWeight: isShared, friendCode: finalCode 
         }, { merge: true });
       }
     } catch (err) { console.error(err); }
@@ -540,6 +563,18 @@ const handleRegister = async () => {
               </>
             )}
             
+            <Text style={styles.inputLabel}>{t.sex || "Biological Sex"}</Text>
+            <View style={{flexDirection: 'row', gap: 10, marginBottom: 20}}>
+              <View style={[styles.unitToggleContainerCompact, {flex: 1}]}>
+                <TouchableOpacity style={[styles.unitOptionCompact, userSex === 'male' && styles.unitOptionActive]} onPress={() => setUserSex('male')}>
+                  <Text style={[styles.unitOptionText, userSex === 'male' && styles.unitOptionTextActive]}>{t.male || "Male"}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.unitOptionCompact, userSex === 'female' && styles.unitOptionActive]} onPress={() => setUserSex('female')}>
+                  <Text style={[styles.unitOptionText, userSex === 'female' && styles.unitOptionTextActive]}>{t.female || "Female"}</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+            
             <Text style={styles.inputLabel}>{t.bodyweight}</Text>
             <View style={{flexDirection: 'row', gap: 10, marginBottom: 20}}>
               <TextInput style={[styles.authInput, {flex: 1, marginBottom: 0}]} placeholder="0" keyboardType="numeric" value={userWeight} onChangeText={setUserWeight} />
@@ -548,7 +583,7 @@ const handleRegister = async () => {
                 <TouchableOpacity style={[styles.unitOptionCompact, userWeightUnit === 'lbs' && styles.unitOptionActive]} onPress={() => setUserWeightUnit('lbs')}><Text style={[styles.unitOptionText, userWeightUnit === 'lbs' && styles.unitOptionTextActive]}>lbs</Text></TouchableOpacity>
               </View>
             </View>
-            <TouchableOpacity style={styles.authPrimaryBtn} onPress={() => { saveProfileData(userWeight, userWeightUnit, displayName, shareWeight, friendCode); setShowOnboarding(false); Keyboard.dismiss(); }}>
+            <TouchableOpacity style={styles.authPrimaryBtn} onPress={() => { saveProfileData(userWeight, userWeightUnit, displayName, shareWeight, friendCode, userSex); setShowOnboarding(false); Keyboard.dismiss(); }}>
               <Text style={styles.authPrimaryBtnText}>{t.continueBtn}</Text>
               <Ionicons name="arrow-forward" size={20} color="#FFF" style={{marginLeft: 8}}/>
             </TouchableOpacity>
@@ -900,97 +935,145 @@ const handleRegister = async () => {
             <TouchableWithoutFeedback onPress={() => setIsSettingsVisible(false)}>
               <View style={styles.modalBackground}>
                 <TouchableWithoutFeedback>
-                  {/* 🔥 FIXED: Added maxHeight so it never gets pushed off the screen */}
                   <View style={[styles.modalContent, { maxHeight: '90%' }]}>
                     
                     <View style={styles.modalHeader}>
-                      <Text style={styles.modalTitle}>{t.settings}</Text>
+                      <Text style={styles.modalTitle}>{t.settings || "Settings"}</Text>
                       <TouchableOpacity onPress={() => setIsSettingsVisible(false)}><Ionicons name="close-circle" size={28} color="#8D99AE" /></TouchableOpacity>
                     </View>
 
-                    {/* 🔥 FIXED: Added ScrollView so tall menus can be scrolled */}
-                    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 20 }}>
-                      <TouchableOpacity style={styles.settingsRow} onPress={toggleLanguage}>
-                        <View style={{flexDirection: 'row', alignItems: 'center'}}><Ionicons name="language-outline" size={24} color="#4361EE" style={{marginRight: 12}} /><Text style={styles.settingsRowText}>{t.language}</Text></View>
-                        <Text style={styles.settingsRowValue}>{lang === 'en' ? '🇬🇧 English' : '🇳🇱 Nederlands'}</Text>
+                    {/* 🔥 NEW: TAB TOGGLES */}
+                    <View style={{flexDirection: 'row', backgroundColor: '#F1F5F9', borderRadius: 12, padding: 4, marginBottom: 16}}>
+                      <TouchableOpacity style={{flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 8, backgroundColor: settingsTab === 'profile' ? '#FFF' : 'transparent', shadowColor: settingsTab === 'profile' ? '#000' : 'transparent', shadowOpacity: 0.1, shadowRadius: 4, elevation: settingsTab === 'profile' ? 2 : 0}} onPress={() => setSettingsTab('profile')}>
+                        <Text style={{fontWeight: '700', color: settingsTab === 'profile' ? '#4361EE' : '#64748B'}}>{t.myProfile || "My Profile"}</Text>
                       </TouchableOpacity>
+                      <TouchableOpacity style={{flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 8, backgroundColor: settingsTab === 'app' ? '#FFF' : 'transparent', shadowColor: settingsTab === 'app' ? '#000' : 'transparent', shadowOpacity: 0.1, shadowRadius: 4, elevation: settingsTab === 'app' ? 2 : 0}} onPress={() => setSettingsTab('app')}>
+                        <Text style={{fontWeight: '700', color: settingsTab === 'app' ? '#4361EE' : '#64748B'}}>{t.appSettings || "App Settings"}</Text>
+                      </TouchableOpacity>
+                    </View>
 
-                      <View style={styles.profileSection}>
-                        <Text style={styles.dangerZoneTitle}>{t.myProfile}</Text>
-                        
-                        {appMode === 'cloud_app' && (
-                          <>
-                            <Text style={[styles.inputLabel, {marginTop: 10}]}>{t.displayName}</Text>
-                            <TextInput style={styles.input} value={displayName} onChangeText={setDisplayName} maxLength={15} />
-                            
-                            <View style={{flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, backgroundColor: '#F8FAFC', padding: 16, borderRadius: 16, borderWidth: 1, borderColor: '#E2E8F0'}}>
-                              <View>
-                                <Text style={{fontSize: 14, fontWeight: '700', color: '#1E293B'}}>{t.friendCode}</Text>
-                                <Text style={{fontSize: 12, color: '#8D99AE', marginTop: 2}}>Share this to add friends</Text>
+                    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 20 }}>
+                      
+                      {/* 🔥 PROFILE TAB CONTENT */}
+                      {settingsTab === 'profile' && (
+                        <View style={styles.profileSection}>
+                          {appMode === 'cloud_app' && (
+                            <>
+                              <Text style={styles.inputLabel}>{t.displayName}</Text>
+                              <TextInput style={styles.input} value={displayName} onChangeText={setDisplayName} maxLength={15} />
+                              
+                              <View style={{flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, backgroundColor: '#F8FAFC', padding: 16, borderRadius: 16, borderWidth: 1, borderColor: '#E2E8F0'}}>
+                                <View>
+                                  <Text style={{fontSize: 14, fontWeight: '700', color: '#1E293B'}}>{t.friendCode}</Text>
+                                  <Text style={{fontSize: 12, color: '#8D99AE', marginTop: 2}}>Share this to add friends</Text>
+                                </View>
+                                <Text style={{fontSize: 18, fontWeight: '900', color: '#4361EE', letterSpacing: 2}}>{friendCode || '------'}</Text>
                               </View>
-                              <Text style={{fontSize: 18, fontWeight: '900', color: '#4361EE', letterSpacing: 2}}>{friendCode || '------'}</Text>
+                            </>
+                          )}
+
+                          {/* STATS GRID */}
+                          <View style={{flexDirection: 'row', gap: 10}}>
+                            <View style={{flex: 1}}>
+                              <Text style={styles.inputLabel}>{t.bodyweight}</Text>
+                              <View style={{flexDirection: 'row', gap: 5, alignItems: 'center', marginBottom: 15}}>
+                                <TextInput style={[styles.input, {flex: 1, marginBottom: 0}]} keyboardType="numeric" value={userWeight} onChangeText={setUserWeight} />
+                                <View style={styles.unitToggleContainerCompact}>
+                                  <TouchableOpacity style={[styles.unitOptionCompact, userWeightUnit === 'kg' && styles.unitOptionActive, {paddingHorizontal: 8}]} onPress={() => setUserWeightUnit('kg')}><Text style={[styles.unitOptionText, userWeightUnit === 'kg' && styles.unitOptionTextActive]}>kg</Text></TouchableOpacity>
+                                  <TouchableOpacity style={[styles.unitOptionCompact, userWeightUnit === 'lbs' && styles.unitOptionActive, {paddingHorizontal: 8}]} onPress={() => setUserWeightUnit('lbs')}><Text style={[styles.unitOptionText, userWeightUnit === 'lbs' && styles.unitOptionTextActive]}>lbs</Text></TouchableOpacity>
+                                </View>
+                              </View>
                             </View>
-                          </>
-                        )}
 
-                        <Text style={styles.inputLabel}>{t.bodyweight}</Text>
-                        <View style={{flexDirection: 'row', gap: 10, alignItems: 'center'}}>
-                          <TextInput style={[styles.input, {flex: 1, marginBottom: 0}]} keyboardType="numeric" value={userWeight} onChangeText={setUserWeight} />
-                          <View style={styles.unitToggleContainerCompact}>
-                            <TouchableOpacity style={[styles.unitOptionCompact, userWeightUnit === 'kg' && styles.unitOptionActive]} onPress={() => setUserWeightUnit('kg')}><Text style={[styles.unitOptionText, userWeightUnit === 'kg' && styles.unitOptionTextActive]}>kg</Text></TouchableOpacity>
-                            <TouchableOpacity style={[styles.unitOptionCompact, userWeightUnit === 'lbs' && styles.unitOptionActive]} onPress={() => setUserWeightUnit('lbs')}><Text style={[styles.unitOptionText, userWeightUnit === 'lbs' && styles.unitOptionTextActive]}>lbs</Text></TouchableOpacity>
+                            <View style={{flex: 1}}>
+                              <Text style={styles.inputLabel}>{t.height || "Height"}</Text>
+                              <View style={{flexDirection: 'row', gap: 5, alignItems: 'center', marginBottom: 15}}>
+                                <TextInput style={[styles.input, {flex: 1, marginBottom: 0}]} keyboardType="numeric" value={userHeight} onChangeText={setUserHeight} />
+                                <View style={styles.unitToggleContainerCompact}>
+                                  <TouchableOpacity style={[styles.unitOptionCompact, userHeightUnit === 'cm' && styles.unitOptionActive, {paddingHorizontal: 8}]} onPress={() => setUserHeightUnit('cm')}><Text style={[styles.unitOptionText, userHeightUnit === 'cm' && styles.unitOptionTextActive]}>cm</Text></TouchableOpacity>
+                                  <TouchableOpacity style={[styles.unitOptionCompact, userHeightUnit === 'in' && styles.unitOptionActive, {paddingHorizontal: 8}]} onPress={() => setUserHeightUnit('in')}><Text style={[styles.unitOptionText, userHeightUnit === 'in' && styles.unitOptionTextActive]}>in</Text></TouchableOpacity>
+                                </View>
+                              </View>
+                            </View>
                           </View>
-                        </View>
 
-                        {appMode === 'cloud_app' && (
-                          <TouchableOpacity style={{flexDirection: 'row', alignItems: 'center', marginTop: 20}} onPress={() => setShareWeight(!shareWeight)}>
-                            <Ionicons name={shareWeight ? "checkbox" : "square-outline"} size={24} color={shareWeight ? "#4361EE" : "#A0AABF"} style={{marginRight: 10}} />
-                            <Text style={{fontSize: 15, color: '#1E293B', fontWeight: '500'}}>{t.shareWeight}</Text>
-                          </TouchableOpacity>
-                        )}
+                          <View style={{flexDirection: 'row', gap: 10}}>
+                            <View style={{flex: 1}}>
+                              <Text style={styles.inputLabel}>{t.age || "Age"}</Text>
+                              <TextInput style={[styles.input, {marginBottom: 15}]} keyboardType="numeric" value={userAge} onChangeText={setUserAge} placeholder="25" />
+                            </View>
 
-                        <TouchableOpacity style={{backgroundColor: '#1E293B', padding: 16, borderRadius: 12, marginTop: 20, alignItems: 'center'}} onPress={() => { saveProfileData(userWeight, userWeightUnit, displayName, shareWeight, friendCode); setIsSettingsVisible(false); Keyboard.dismiss(); }}>
-                          <Text style={{color: '#FFF', fontWeight: '700'}}>{t.updateProfile || "Save Profile"}</Text>
-                        </TouchableOpacity>
-                      </View>
-
-                      {appMode === 'cloud_app' ? (
-                        <>
-                          <TouchableOpacity style={styles.settingsRow} onPress={() => { setIsSettingsVisible(false); handleLogout(); }}>
-                            <View style={{flexDirection: 'row', alignItems: 'center'}}><Ionicons name="log-out-outline" size={24} color="#64748B" style={{marginRight: 12}} /><Text style={styles.settingsRowText}>{t.logout}</Text></View>
-                          </TouchableOpacity>
-                          <View style={styles.dangerZone}>
-                            <Text style={styles.dangerZoneTitle}>{t.dangerZone}</Text>
-                            <TouchableOpacity style={styles.deleteAccountBtn} onPress={() => { setIsSettingsVisible(false); handleDeleteAccount(); }}><Ionicons name="trash-outline" size={20} color="#FFF" style={{marginRight: 8}} /><Text style={styles.deleteAccountBtnText}>{t.deleteAccountBtn}</Text></TouchableOpacity>
+                            <View style={{flex: 1.5}}>
+                              <Text style={styles.inputLabel}>{t.sex || "Biological Sex"}</Text>
+                              <View style={[styles.unitToggleContainerCompact, {height: 48}]}>
+                                <TouchableOpacity style={[styles.unitOptionCompact, userSex === 'male' && styles.unitOptionActive]} onPress={() => setUserSex('male')}>
+                                  <Ionicons name="male-outline" size={16} color={userSex === 'male' ? '#FFF' : '#64748B'} style={{marginRight: 4}} />
+                                  <Text style={[styles.unitOptionText, userSex === 'male' && styles.unitOptionTextActive]}>{t.male || "Male"}</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity style={[styles.unitOptionCompact, userSex === 'female' && styles.unitOptionActive]} onPress={() => setUserSex('female')}>
+                                  <Ionicons name="female-outline" size={16} color={userSex === 'female' ? '#FFF' : '#64748B'} style={{marginRight: 4}} />
+                                  <Text style={[styles.unitOptionText, userSex === 'female' && styles.unitOptionTextActive]}>{t.female || "Female"}</Text>
+                                </TouchableOpacity>
+                              </View>
+                            </View>
                           </View>
-                        </>
-                      ) : (
-                        <>
-                          {/* 🔥 NEW: Offline Sync Button 🔥 */}
-                          <View style={styles.dangerZone}>
-                            <Text style={styles.dangerZoneTitle}>CLOUD SYNC</Text>
-                            <TouchableOpacity 
-                              style={[styles.authPrimaryBtn, {marginBottom: 10}]} 
-                              onPress={() => { setIsSettingsVisible(false); setAppMode('login_form'); }}
-                            >
-                              <Ionicons name="cloud-upload-outline" size={20} color="#FFF" style={{marginRight: 8}} />
-                              <Text style={styles.authPrimaryBtnText}>{t.loginToSync || "Login & Sync Data"}</Text>
+
+                          {appMode === 'cloud_app' && (
+                            <TouchableOpacity style={{flexDirection: 'row', alignItems: 'center', marginTop: 10}} onPress={() => setShareWeight(!shareWeight)}>
+                              <Ionicons name={shareWeight ? "checkbox" : "square-outline"} size={24} color={shareWeight ? "#4361EE" : "#A0AABF"} style={{marginRight: 10}} />
+                              <Text style={{fontSize: 15, color: '#1E293B', fontWeight: '500'}}>{t.shareWeight}</Text>
                             </TouchableOpacity>
-                          </View>
+                          )}
 
-                          <TouchableOpacity style={styles.settingsRow} onPress={() => { setIsSettingsVisible(false); setAppMode('gatekeeper'); setWorkouts([]); setExerciseList(DEFAULT_EXERCISES); }}>
-                            <View style={{flexDirection: 'row', alignItems: 'center'}}><Ionicons name="log-out-outline" size={24} color="#64748B" style={{marginRight: 12}} /><Text style={styles.settingsRowText}>{t.exitOffline || "Sign Out"}</Text></View>
+                          <TouchableOpacity style={{backgroundColor: '#1E293B', padding: 16, borderRadius: 12, marginTop: 20, alignItems: 'center'}} onPress={() => { saveProfileData(userWeight, userWeightUnit, userHeight, userHeightUnit, userAge, displayName, shareWeight, friendCode, userSex); setIsSettingsVisible(false); Keyboard.dismiss(); }}>
+                            <Text style={{color: '#FFF', fontWeight: '700'}}>{t.updateProfile || "Save Profile"}</Text>
                           </TouchableOpacity>
-                        </>
+                        </View>
                       )}
-                    </ScrollView>
 
+                      {/* 🔥 APP SETTINGS TAB CONTENT */}
+                      {settingsTab === 'app' && (
+                        <View style={{paddingTop: 10}}>
+                          <TouchableOpacity style={styles.settingsRow} onPress={toggleLanguage}>
+                            <View style={{flexDirection: 'row', alignItems: 'center'}}><Ionicons name="language-outline" size={24} color="#4361EE" style={{marginRight: 12}} /><Text style={styles.settingsRowText}>{t.language}</Text></View>
+                            <Text style={styles.settingsRowValue}>{lang === 'en' ? '🇬🇧 English' : '🇳🇱 Nederlands'}</Text>
+                          </TouchableOpacity>
+
+                          {appMode === 'cloud_app' ? (
+                            <>
+                              <TouchableOpacity style={styles.settingsRow} onPress={() => { setIsSettingsVisible(false); handleLogout(); }}>
+                                <View style={{flexDirection: 'row', alignItems: 'center'}}><Ionicons name="log-out-outline" size={24} color="#64748B" style={{marginRight: 12}} /><Text style={styles.settingsRowText}>{t.logout}</Text></View>
+                              </TouchableOpacity>
+                              <View style={styles.dangerZone}>
+                                <Text style={styles.dangerZoneTitle}>{t.dangerZone}</Text>
+                                <TouchableOpacity style={styles.deleteAccountBtn} onPress={() => { setIsSettingsVisible(false); handleDeleteAccount(); }}><Ionicons name="trash-outline" size={20} color="#FFF" style={{marginRight: 8}} /><Text style={styles.deleteAccountBtnText}>{t.deleteAccountBtn}</Text></TouchableOpacity>
+                              </View>
+                            </>
+                          ) : (
+                            <>
+                              <View style={styles.dangerZone}>
+                                <Text style={styles.dangerZoneTitle}>CLOUD SYNC</Text>
+                                <TouchableOpacity style={[styles.authPrimaryBtn, {marginBottom: 10}]} onPress={() => { setIsSettingsVisible(false); setAppMode('login_form'); }}>
+                                  <Ionicons name="cloud-upload-outline" size={20} color="#FFF" style={{marginRight: 8}} />
+                                  <Text style={styles.authPrimaryBtnText}>{t.loginToSync || "Login & Sync Data"}</Text>
+                                </TouchableOpacity>
+                              </View>
+                              <TouchableOpacity style={styles.settingsRow} onPress={() => { setIsSettingsVisible(false); setAppMode('gatekeeper'); setWorkouts([]); setExerciseList(DEFAULT_EXERCISES); }}>
+                                <View style={{flexDirection: 'row', alignItems: 'center'}}><Ionicons name="log-out-outline" size={24} color="#64748B" style={{marginRight: 12}} /><Text style={styles.settingsRowText}>{t.exitOffline || "Sign Out"}</Text></View>
+                              </TouchableOpacity>
+                            </>
+                          )}
+                        </View>
+                      )}
+
+                    </ScrollView>
                   </View>
                 </TouchableWithoutFeedback>
               </View>
             </TouchableWithoutFeedback>
           </Modal>
         )}
+        
         {/* 🔥 THE NEW SOCIAL MODAL 🔥 */}
         <SocialModal 
           isVisible={isSocialVisible} 
