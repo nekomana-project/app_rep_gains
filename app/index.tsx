@@ -169,8 +169,9 @@ export default function App() {
           setExerciseList(cloudExercises);
 
           // 🔥 FIXED: Keep local storage perfectly synced with the cloud
-          await AsyncStorage.setItem('@gym_workouts', JSON.stringify(cloudWorkouts));
-          await AsyncStorage.setItem('@custom_exercises', JSON.stringify(cloudExercises));
+          // Save to CLOUD CACHE keys
+          await AsyncStorage.setItem('@cloud_cache_workouts', JSON.stringify(cloudWorkouts));
+          await AsyncStorage.setItem('@cloud_cache_exercises', JSON.stringify(cloudExercises));
 
           if (data.language) setLang(data.language);
           if (data.displayName) setDisplayName(data.displayName);
@@ -200,10 +201,11 @@ export default function App() {
         if (savedWorkouts) setWorkouts(JSON.parse(savedWorkouts));
         else setWorkouts([]);
 
-        const savedExercises = await AsyncStorage.getItem('@custom_exercises');
+        // 🔥 FIX: Load from @guest_exercises, NOT @custom_exercises
+        const savedExercises = await AsyncStorage.getItem('@guest_exercises');
         if (savedExercises) setExerciseList(JSON.parse(savedExercises).map((e: any) => typeof e === 'string' ? { name: e, met: 5.0 } : e));
         else setExerciseList(DEFAULT_EXERCISES);
-
+        
         const savedWeight = await AsyncStorage.getItem('@user_weight');
         const savedUnit = await AsyncStorage.getItem('@user_weight_unit');
         
@@ -259,18 +261,23 @@ export default function App() {
       const user = auth.currentUser;
       if (user && appMode === 'cloud_app') {
         await setDoc(doc(db, 'users', user.uid), { exercises: updatedList }, { merge: true });
+        // Save to CLOUD CACHE
+        await AsyncStorage.setItem('@cloud_cache_exercises', JSON.stringify(updatedList));
+      } else {
+        // Save to GUEST storage
+        await AsyncStorage.setItem('@guest_exercises', JSON.stringify(updatedList));
       }
-      // 🔥 FIXED: ALWAYS save locally
-      await AsyncStorage.setItem('@custom_exercises', JSON.stringify(updatedList));
     } catch (error) { console.error("Error saving exercises:", error); }
   };
 
   // 🔥 NEW: Seamlessly merges local offline data into the cloud!
   const syncLocalWithCloud = async (uid: string) => {
     try {
-      const localWorkoutsRaw = await AsyncStorage.getItem('@gym_workouts');
+      // 🔥 FIX: Pull from the NEW GUEST keys
+      const localWorkoutsRaw = await AsyncStorage.getItem('@guest_workouts');
       const localWorkouts = localWorkoutsRaw ? JSON.parse(localWorkoutsRaw) : [];
-      const localExercisesRaw = await AsyncStorage.getItem('@custom_exercises');
+      
+      const localExercisesRaw = await AsyncStorage.getItem('@guest_exercises');
       const localExercises = localExercisesRaw ? JSON.parse(localExercisesRaw) : [];
 
       if (localWorkouts.length === 0 && localExercises.length === 0) return; // Nothing to sync
