@@ -83,6 +83,22 @@ export default function App() {
   const [newCustomExercise, setNewCustomExercise] = useState('');
   const [newExerciseIntensity, setNewExerciseIntensity] = useState<number>(5.0); 
 
+  // 🔥 NEW: Cross-platform delete confirmation (fixes Web bugs!)
+  const confirmDelete = (title: string, message: string, onConfirm: () => void) => {
+    if (Platform.OS === 'web') {
+      // Standard browser confirmation
+      if (window.confirm(`${title}\n\n${message}`)) {
+        onConfirm();
+      }
+    } else {
+      // Native mobile alert
+      Alert.alert(title, message, [
+        { text: t.cancel || 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: onConfirm }
+      ]);
+    }
+  };
+
   useEffect(() => { loadData(); }, []);
 
   const handleParamChange = (setter: React.Dispatch<React.SetStateAction<any>>, value: any) => {
@@ -135,13 +151,24 @@ export default function App() {
         const docSnap = await getDoc(doc(db, 'users', user.uid));
         if (docSnap.exists()) {
           const data = docSnap.data();
-          setWorkouts(data.workouts || []);
+          
+          const cloudWorkouts = data.workouts || [];
+          setWorkouts(cloudWorkouts);
+          
+          let cloudExercises = DEFAULT_EXERCISES;
+          if (data.exercises) {
+            cloudExercises = data.exercises.map((e: any) => typeof e === 'string' ? { name: e, met: 5.0 } : e);
+          }
+          setExerciseList(cloudExercises);
+
+          // 🔥 FIXED: Overwrite local storage with the exact cloud truth so ghosts don't sync
+          await AsyncStorage.setItem('@gym_workouts', JSON.stringify(cloudWorkouts));
+          await AsyncStorage.setItem('@custom_exercises', JSON.stringify(cloudExercises));
+
           if (data.language) setLang(data.language);
-          if (data.exercises) setExerciseList(data.exercises.map((e: any) => typeof e === 'string' ? { name: e, met: 5.0 } : e));
           if (data.displayName) setDisplayName(data.displayName);
           if (data.friendCode) setFriendCode(data.friendCode);
           if (data.shareWeight !== undefined) setShareWeight(data.shareWeight);
-          else setExerciseList(DEFAULT_EXERCISES);
 
           if (data.userWeight) {
             setUserWeight(data.userWeight);
@@ -197,16 +224,23 @@ export default function App() {
   const saveWorkouts = async (updatedWorkoutsArray: Workout[]) => {
     try { 
       const user = auth.currentUser;
-      if (user && appMode === 'cloud_app') await setDoc(doc(db, 'users', user.uid), { workouts: updatedWorkoutsArray }, { merge: true });
-      else await AsyncStorage.setItem('@gym_workouts', JSON.stringify(updatedWorkoutsArray)); 
+      // If online, save to cloud
+      if (user && appMode === 'cloud_app') {
+        await setDoc(doc(db, 'users', user.uid), { workouts: updatedWorkoutsArray }, { merge: true });
+      }
+      // 🔥 FIXED: ALWAYS save locally too, so offline storage perfectly mirrors the cloud
+      await AsyncStorage.setItem('@gym_workouts', JSON.stringify(updatedWorkoutsArray)); 
     } catch (error) { console.error("Error saving data:", error); }
   };
 
   const saveExercises = async (updatedList: ExerciseDef[]) => {
     try {
       const user = auth.currentUser;
-      if (user && appMode === 'cloud_app') await setDoc(doc(db, 'users', user.uid), { exercises: updatedList }, { merge: true });
-      else await AsyncStorage.setItem('@custom_exercises', JSON.stringify(updatedList));
+      if (user && appMode === 'cloud_app') {
+        await setDoc(doc(db, 'users', user.uid), { exercises: updatedList }, { merge: true });
+      }
+      // 🔥 FIXED: ALWAYS save locally
+      await AsyncStorage.setItem('@custom_exercises', JSON.stringify(updatedList));
     } catch (error) { console.error("Error saving exercises:", error); }
   };
 
@@ -287,22 +321,18 @@ export default function App() {
   };
 
   const handleDeleteAccount = () => {
-    Alert.alert(t.deleteAccountConfirmTitle, t.deleteAccountConfirmMsg, [
-      { text: t.cancel, style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: async () => {
-          try {
-            const user = auth.currentUser;
-            if (user) {
-              setIsLoading(true);
-              await deleteDoc(doc(db, 'users', user.uid));
-              await deleteUser(user);
-              setAppMode('gatekeeper'); setWorkouts([]); setExerciseList(DEFAULT_EXERCISES);
-            }
-          } catch (error: any) { Alert.alert(t.errorTitle, error.message); } 
-          finally { setIsLoading(false); }
+    confirmDelete(t.deleteAccountConfirmTitle, t.deleteAccountConfirmMsg, async () => {
+      try {
+        const user = auth.currentUser;
+        if (user) {
+          setIsLoading(true);
+          await deleteDoc(doc(db, 'users', user.uid));
+          await deleteUser(user);
+          setAppMode('gatekeeper'); setWorkouts([]); setExerciseList(DEFAULT_EXERCISES);
         }
-      }
-    ]);
+      } catch (error: any) { Alert.alert(t.errorTitle, error.message); } 
+      finally { setIsLoading(false); }
+    });
   };
 
   const handleRefresh = async () => { setIsRefreshing(true); await loadData(); setIsRefreshing(false); };
@@ -347,15 +377,11 @@ export default function App() {
   };
 
   const handleDeleteExerciseItem = (exerciseToRemove: string) => {
-    Alert.alert(t.deleteConfirmTitle, t.deleteExerciseMsg, [
-      { text: t.cancel, style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: async () => {
-          const updatedList = exerciseList.filter((e) => e.name !== exerciseToRemove);
-          setExerciseList(updatedList); 
-          await saveExercises(updatedList);
-        }
-      }
-    ]);
+    confirmDelete(t.deleteConfirmTitle, t.deleteExerciseMsg, async () => {
+      const updatedList = exerciseList.filter((e) => e.name !== exerciseToRemove);
+      setExerciseList(updatedList); 
+      await saveExercises(updatedList);
+    });
   };
 
   const handleSave = () => {
@@ -395,7 +421,11 @@ export default function App() {
   };
   
   const handleDelete = (idToRemove: string) => {
-    Alert.alert(t.deleteConfirmTitle, t.deleteConfirmMsg, [{ text: t.cancel, style: 'cancel' }, { text: 'Delete', style: 'destructive', onPress: () => { const updatedWorkouts = workouts.filter((w) => w.id !== idToRemove); setWorkouts(updatedWorkouts); saveWorkouts(updatedWorkouts); } }]);
+    confirmDelete(t.deleteConfirmTitle, t.deleteConfirmMsg, () => { 
+      const updatedWorkouts = workouts.filter((w) => w.id !== idToRemove); 
+      setWorkouts(updatedWorkouts); 
+      saveWorkouts(updatedWorkouts); 
+    });
   };
 
   const getMarkedDates = () => {

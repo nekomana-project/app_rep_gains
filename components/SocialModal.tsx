@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { arrayRemove, arrayUnion, collection, doc, getDoc, getDocs, onSnapshot, query, updateDoc, where } from 'firebase/firestore';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, Modal, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, Modal, Platform, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { styles } from '../constants/styles';
 import { Workout } from '../constants/types';
 import { auth, db } from '../firebaseConfig';
@@ -101,25 +101,32 @@ export default function SocialModal({ isVisible, onClose, t, friendCode, myWorko
 
   const handleRemoveFriend = (friendUid: string, friendName: string) => {
     if (appMode !== 'cloud_app') return; // Strict Block
-    Alert.alert(
-      "Remove Friend",
-      `Are you sure you want to remove ${friendName} from your friends list?`,
-      [
-        { text: "Cancel", style: "cancel" },
-        { 
-          text: "Remove", 
-          style: "destructive", 
-          onPress: async () => {
-            const myUid = auth.currentUser?.uid;
-            if (!myUid) return;
-            try {
-              await updateDoc(doc(db, 'users', myUid), { friends: arrayRemove(friendUid) });
-              await updateDoc(doc(db, 'users', friendUid), { friends: arrayRemove(myUid) });
-            } catch (e) { Alert.alert("Error", "Failed to remove friend."); }
-          }
-        }
-      ]
-    );
+    
+    // The actual deletion code
+    const executeRemoval = async () => {
+      const myUid = auth.currentUser?.uid;
+      if (!myUid) return;
+      try {
+        await updateDoc(doc(db, 'users', myUid), { friends: arrayRemove(friendUid) });
+        await updateDoc(doc(db, 'users', friendUid), { friends: arrayRemove(myUid) });
+      } catch (e) { Alert.alert("Error", "Failed to remove friend."); }
+    };
+
+    // Cross-platform check
+    if (Platform.OS === 'web') {
+      if (window.confirm(`Remove Friend\n\nAre you sure you want to remove ${friendName} from your friends list?`)) {
+        executeRemoval();
+      }
+    } else {
+      Alert.alert(
+        "Remove Friend",
+        `Are you sure you want to remove ${friendName} from your friends list?`,
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Remove", style: "destructive", onPress: executeRemoval }
+        ]
+      );
+    }
   };
 
   // ==========================================
